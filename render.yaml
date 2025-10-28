@@ -3,10 +3,11 @@ services:
     name: saku-bot
     env: python
     plan: free
-    pythonVersion: 3.11
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.13
       - key: DISCORD_TOKEN
         sync: false
       - key: GUILD_IDS
