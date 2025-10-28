@@ -1,13 +1,12 @@
 # 💖 Editado por Rami/RO IZ
-# Parche para Render + discord.py sin audio
+# Parche para Render + discord.py sin audio + keep-alive ping automático
 import sys
 import types
 sys.modules['audioop'] = types.ModuleType('audioop')  # evita error de audioop en Render
-# Bot de Discord que busca enlaces de Google Drive en mensajes fijados y devuelve el estado de capítulos
 
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -15,6 +14,8 @@ from google.auth.transport.requests import Request
 import re
 from flask import Flask
 from threading import Thread
+import requests
+import time
 
 # --- Keep Alive ---
 app = Flask('')
@@ -31,6 +32,7 @@ keep_alive()
 # --- Variables desde Secrets ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_IDS = [int(x.strip()) for x in os.getenv("GUILD_IDS", "").split(",") if x.strip()]
+PRIMARY_URL = os.getenv("PRIMARY_URL")  # URL de tu servicio en Render para el ping
 
 # --- Crear client_secret.json si no existe ---
 if not os.path.exists("client_secret.json"):
@@ -69,17 +71,14 @@ def authenticate():
 
 # --- Funciones de Drive ---
 def extract_drive_links(text):
-    # Detecta enlaces válidos de Drive (carpetas y archivos)
     return re.findall(r"https?://drive\.google\.com/(?:file/d|drive/(?:u/\d+/)?folders)/[a-zA-Z0-9_-]+", text)
 
 def extract_id(link):
-    # Quita /u/X/ si existe y extrae ID
     clean_link = re.sub(r'/u/\d+/', '/', link)
     match = re.search(r"/(?:d|folders)/([a-zA-Z0-9_-]+)", clean_link)
     return match.group(1) if match else None
 
 def folder_has_files(service, folder_id):
-    """Verifica si una carpeta contiene al menos un archivo (no otra carpeta)."""
     try:
         results = service.files().list(
             q=f"'{folder_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
@@ -90,14 +89,12 @@ def folder_has_files(service, folder_id):
         return False
 
 def traverse_folder(service, folder_id):
-    """Obtiene capítulos numerados solo si las carpetas tienen archivos dentro."""
     try:
         query = f"'{folder_id}' in parents and trashed=false"
         items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
         caps = []
         for item in items:
             if item["mimeType"] == "application/vnd.google-apps.folder":
-                # Solo agregar si la subcarpeta tiene archivos
                 if folder_has_files(service, item["id"]):
                     nums = re.findall(r"\d+", item["name"])
                     if nums:
@@ -107,13 +104,11 @@ def traverse_folder(service, folder_id):
         return None
 
 def traverse_trad(service, folder_id):
-    """Obtiene capítulos de traducciones basados en archivos sueltos dentro de la carpeta."""
     try:
         query = f"'{folder_id}' in parents and trashed=false"
         items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
         caps = []
         for item in items:
-            # Solo archivos (ignora carpetas)
             if item["mimeType"] == "application/vnd.google-apps.folder":
                 continue
             nums = re.findall(r"\d+", item["name"])
@@ -124,7 +119,6 @@ def traverse_trad(service, folder_id):
         return None
 
 def join_ranges(numbers):
-    """Convierte [1,2,3,5,6] → '1 al 3 / 5 al 6'"""
     if not numbers:
         return "0"
     numbers = sorted(numbers)
@@ -148,6 +142,7 @@ async def on_ready():
     for guild in bot.guilds:
         if guild.id in GUILD_IDS:
             print(f"🪄 Conectado al servidor: {guild.name} ({guild.id})")
+    keep_awake.start()  # inicia la tarea de ping automático
 
 # --- Comando revisar ---
 @bot.command()
@@ -206,6 +201,16 @@ async def revisar(ctx):
         await ctx.send(f"✅ Resultados:\n\n" + "\n\n".join(results))
     else:
         await ctx.send("⚠️ No se encontraron enlaces válidos de Google Drive en los mensajes fijados.")
+
+# --- Tarea de ping automático cada 5 minutos ---
+@tasks.loop(minutes=5)
+async def keep_awake():
+    if PRIMARY_URL:
+        try:
+            requests.get(PRIMARY_URL)
+            print(f"💤 Ping automático enviado a {PRIMARY_URL} para mantener vivo el bot.")
+        except Exception as e:
+            print(f"⚠️ Error en ping automático: {e}")
 
 # --- Ejecutar bot ---
 if not getattr(sys.modules[__name__], "_bot_started", False):
