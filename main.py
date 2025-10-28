@@ -1,4 +1,8 @@
 # 💖 Editado por Rami/RO IZ
+# Parche para Render + discord.py sin audio
+import sys
+import types
+sys.modules['audioop'] = types.ModuleType('audioop')  # evita error de audioop en Render
 # Bot de Discord que busca enlaces de Google Drive en mensajes fijados y devuelve el estado de capítulos
 
 import os
