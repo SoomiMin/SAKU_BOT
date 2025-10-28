@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: saku-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: GUILD_IDS
+        sync: false
+      - key: GOOGLE_CLIENT_JSON
+        sync: false
+      - key: GOOGLE_TOKEN_JSON
+        sync: false
