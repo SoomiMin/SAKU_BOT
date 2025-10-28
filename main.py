@@ -191,4 +191,6 @@ async def revisar(ctx):
         await ctx.send("⚠️ No se encontraron enlaces válidos de Google Drive en los mensajes fijados.")
 
 # --- Ejecutar bot ---
-bot.run(TOKEN)
+if not getattr(sys.modules[__name__], "_bot_started", False):
+    setattr(sys.modules[__name__], "_bot_started", True)
+    bot.run(TOKEN)
