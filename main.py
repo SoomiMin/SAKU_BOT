@@ -90,7 +90,7 @@ def folder_has_files(service, folder_id):
         return False
 
 def traverse_folder(service, folder_id):
-    """Obtiene los capítulos numerados solo si las carpetas tienen archivos dentro."""
+    """Obtiene capítulos numerados solo si las carpetas tienen archivos dentro."""
     try:
         query = f"'{folder_id}' in parents and trashed=false"
         items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
@@ -102,6 +102,23 @@ def traverse_folder(service, folder_id):
                     nums = re.findall(r"\d+", item["name"])
                     if nums:
                         caps.append(int(nums[0]))
+        return sorted(caps)
+    except Exception:
+        return None
+
+def traverse_trad(service, folder_id):
+    """Obtiene capítulos de traducciones basados en archivos sueltos dentro de la carpeta."""
+    try:
+        query = f"'{folder_id}' in parents and trashed=false"
+        items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
+        caps = []
+        for item in items:
+            # Solo archivos (ignora carpetas)
+            if item["mimeType"] == "application/vnd.google-apps.folder":
+                continue
+            nums = re.findall(r"\d+", item["name"])
+            if nums:
+                caps.append(int(nums[0]))
         return sorted(caps)
     except Exception:
         return None
@@ -168,7 +185,7 @@ async def revisar(ctx):
                     if "raw" in name_lower:
                         raw_caps = traverse_folder(service, item["id"])
                     elif "trad" in name_lower or "traducción" in name_lower:
-                        trad_caps = traverse_folder(service, item["id"])
+                        trad_caps = traverse_trad(service, item["id"])
                     elif "clean" in name_lower or "limpieza" in name_lower:
                         clean_caps = traverse_folder(service, item["id"])
                     elif "type" in name_lower or "edición" in name_lower:
