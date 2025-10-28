@@ -1,4 +1,4 @@
-discord.py==2.3.2
+discord.py[core]==2.3.2
 google-api-python-client
 google-auth
 google-auth-oauthlib
