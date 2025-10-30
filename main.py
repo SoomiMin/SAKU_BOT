@@ -1,38 +1,20 @@
 # 💖 Editado por Rami/RO IZ
-# Parche para Render + discord.py sin audio + keep-alive ping automático
-import sys
-import types
-sys.modules['audioop'] = types.ModuleType('audioop')  # evita error de audioop en Render
-
-import os
-import discord
+import sys, types, os, discord, re
 from discord.ext import commands, tasks
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-import re
-from flask import Flask
-from threading import Thread
-import requests
-import time
+from dotenv import load_dotenv
 
-# --- Keep Alive ---
-app = Flask('')
+sys.modules['audioop'] = types.ModuleType('audioop')  # evita error en audioop
 
-@app.route('/')
-def home():
-    return "Saku está despierta! 🌸"
+# --- Cargar .env ---
+load_dotenv()
 
-def keep_alive():
-    Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
-
-keep_alive()
-
-# --- Variables desde Secrets ---
+# --- Variables sensibles ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_IDS = [int(x.strip()) for x in os.getenv("GUILD_IDS", "").split(",") if x.strip()]
-PRIMARY_URL = os.getenv("PRIMARY_URL")  # URL de tu servicio en Render para el ping
 
 # --- Crear client_secret.json si no existe ---
 if not os.path.exists("client_secret.json"):
@@ -48,7 +30,7 @@ if not os.path.exists("token.json"):
         with open("token.json", "w", encoding="utf-8") as f:
             f.write(token_json)
 
-# --- Configuración de bot ---
+# --- Configuración bot ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -90,68 +72,55 @@ def folder_has_files(service, folder_id):
 
 def traverse_folder(service, folder_id):
     try:
-        query = f"'{folder_id}' in parents and trashed=false"
-        items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
+        items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
+                                     fields="files(id,name,mimeType)").execute().get("files", [])
         caps = []
         for item in items:
-            if item["mimeType"] == "application/vnd.google-apps.folder":
-                if folder_has_files(service, item["id"]):
-                    nums = re.findall(r"\d+", item["name"])
-                    if nums:
-                        caps.append(int(nums[0]))
+            if item["mimeType"] == "application/vnd.google-apps.folder" and folder_has_files(service, item["id"]):
+                nums = re.findall(r"\d+", item["name"])
+                if nums: caps.append(int(nums[0]))
         return sorted(caps)
     except Exception:
         return None
 
 def traverse_trad(service, folder_id):
     try:
-        query = f"'{folder_id}' in parents and trashed=false"
-        items = service.files().list(q=query, fields="files(id,name,mimeType)").execute().get("files", [])
+        items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
+                                     fields="files(id,name,mimeType)").execute().get("files", [])
         caps = []
         for item in items:
-            if item["mimeType"] == "application/vnd.google-apps.folder":
-                continue
+            if item["mimeType"] == "application/vnd.google-apps.folder": continue
             nums = re.findall(r"\d+", item["name"])
-            if nums:
-                caps.append(int(nums[0]))
+            if nums: caps.append(int(nums[0]))
         return sorted(caps)
     except Exception:
         return None
 
 def join_ranges(numbers):
-    if not numbers:
-        return "0"
+    if not numbers: return "0"
     numbers = sorted(numbers)
     ranges = []
     start = prev = numbers[0]
     for n in numbers[1:]:
-        if n == prev + 1:
-            prev = n
+        if n == prev + 1: prev = n
         else:
-            ranges.append(f"{start}" if start == prev else f"{start} al {prev}")
+            ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
             start = prev = n
-    ranges.append(f"{start}" if start == prev else f"{start} al {prev}")
+    ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
     return " / ".join(ranges)
 
 # --- Eventos ---
 @bot.event
 async def on_ready():
     print(f"✨ Saku está en línea como {bot.user}")
-    if not GUILD_IDS:
-        print("⚠️ No se han definido GUILD_IDS en las variables de entorno.")
-    for guild in bot.guilds:
-        if guild.id in GUILD_IDS:
-            print(f"🪄 Conectado al servidor: {guild.name} ({guild.id})")
-    keep_awake.start()  # inicia la tarea de ping automático
+    if not GUILD_IDS: print("⚠️ No se han definido GUILD_IDS en el .env")
 
 # --- Comando revisar ---
 @bot.command()
 async def revisar(ctx):
     if ctx.guild.id not in GUILD_IDS:
-        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-
+        return await ctx.send("❌ Este comando no está autorizado aquí")
     await ctx.send("🔍 Buscando enlaces de Drive en los mensajes fijados...")
-
     creds = authenticate()
     service = build("drive", "v3", credentials=creds)
     pinned_messages = await ctx.channel.pins()
@@ -159,58 +128,25 @@ async def revisar(ctx):
 
     for msg in pinned_messages:
         links = extract_drive_links(msg.content)
-        if not links:
-            continue
+        if not links: continue
         for link in links:
             folder_id = extract_id(link)
-            if not folder_id:
-                continue
+            if not folder_id: continue
             try:
-                items = service.files().list(
-                    q=f"'{folder_id}' in parents and trashed=false",
-                    fields="files(id,name,mimeType)"
-                ).execute().get("files", [])
-
+                items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
+                                             fields="files(id,name,mimeType)").execute().get("files", [])
                 raw_caps = trad_caps = clean_caps = type_caps = []
-
                 for item in items:
-                    if item["mimeType"] != "application/vnd.google-apps.folder":
-                        continue
+                    if item["mimeType"] != "application/vnd.google-apps.folder": continue
                     name_lower = item["name"].lower()
-                    if "raw" in name_lower:
-                        raw_caps = traverse_folder(service, item["id"])
-                    elif "trad" in name_lower or "traducción" in name_lower:
-                        trad_caps = traverse_trad(service, item["id"])
-                    elif "clean" in name_lower or "limpieza" in name_lower:
-                        clean_caps = traverse_folder(service, item["id"])
-                    elif "type" in name_lower or "edición" in name_lower:
-                        type_caps = traverse_folder(service, item["id"])
-
-                raw_str = join_ranges(raw_caps) if raw_caps is not None else "sin acceso"
-                trad_str = join_ranges(trad_caps) if trad_caps is not None else "sin acceso"
-                clean_str = join_ranges(clean_caps) if clean_caps is not None else "sin acceso"
-                type_str = join_ranges(type_caps) if type_caps is not None else "sin acceso"
-
-                results.append(
-                    f"📌 Documentos encontrados:\nRAW: {raw_str}\nTRAD: {trad_str}\nCLEAN: {clean_str}\nTYPE: {type_str}"
-                )
+                    if "raw" in name_lower: raw_caps = traverse_folder(service, item["id"])
+                    elif "trad" in name_lower or "traducción" in name_lower: trad_caps = traverse_trad(service, item["id"])
+                    elif "clean" in name_lower or "limpieza" in name_lower: clean_caps = traverse_folder(service, item["id"])
+                    elif "type" in name_lower or "edición" in name_lower: type_caps = traverse_folder(service, item["id"])
+                results.append(f"📌 Documentos:\nRAW: {join_ranges(raw_caps)}\nTRAD: {join_ranges(trad_caps)}\nCLEAN: {join_ranges(clean_caps)}\nTYPE: {join_ranges(type_caps)}")
             except Exception:
-                results.append("📌 API sin acceso. Permita que **soulferre1995@gmail.com** acceda al enlace solicitado e intente nuevamente.")
-
-    if results:
-        await ctx.send(f"✅ Resultados:\n\n" + "\n\n".join(results))
-    else:
-        await ctx.send("⚠️ No se encontraron enlaces válidos de Google Drive en los mensajes fijados.")
-
-# --- Tarea de ping automático cada 5 minutos ---
-@tasks.loop(minutes=5)
-async def keep_awake():
-    if PRIMARY_URL:
-        try:
-            requests.get(PRIMARY_URL)
-            print(f"💤 Ping automático enviado a {PRIMARY_URL} para mantener vivo el bot.")
-        except Exception as e:
-            print(f"⚠️ Error en ping automático: {e}")
+                results.append("📌 API sin acceso. Permita que el correo **soulferre1995@gmail.com** tenga acceso e intente nuevamente.")
+    await ctx.send("\n\n".join(results) if results else "⚠️ No se encontraron enlaces válidos")
 
 # --- Ejecutar bot ---
 if not getattr(sys.modules[__name__], "_bot_started", False):
