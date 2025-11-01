@@ -120,34 +120,68 @@ async def on_ready():
 async def revisar(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado aquí")
+
     await ctx.send("🔍 Buscando enlaces de Drive en los mensajes fijados...")
+
     creds = authenticate()
     service = build("drive", "v3", credentials=creds)
     pinned_messages = await ctx.channel.pins()
-    results = []
 
     for msg in pinned_messages:
         links = extract_drive_links(msg.content)
-        if not links: continue
+        if not links:
+            continue
+
         for link in links:
             folder_id = extract_id(link)
-            if not folder_id: continue
-            try:
-                items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
-                                             fields="files(id,name,mimeType)").execute().get("files", [])
-                raw_caps = trad_caps = clean_caps = type_caps = []
-                for item in items:
-                    if item["mimeType"] != "application/vnd.google-apps.folder": continue
-                    name_lower = item["name"].lower()
-                    if "raw" in name_lower: raw_caps = traverse_folder(service, item["id"])
-                    elif "trad" in name_lower or "traducción" in name_lower: trad_caps = traverse_trad(service, item["id"])
-                    elif "clean" in name_lower or "limpieza" in name_lower: clean_caps = traverse_folder(service, item["id"])
-                    elif "type" in name_lower or "edición" in name_lower: type_caps = traverse_folder(service, item["id"])
-                results.append(f"📌 Documentos:\nRAW: {join_ranges(raw_caps)}\nTRAD: {join_ranges(trad_caps)}\nCLEAN: {join_ranges(clean_caps)}\nTYPE: {join_ranges(type_caps)}")
-            except Exception:
-                results.append("📌 API sin acceso. Permita que el correo **soulferre1995@gmail.com** tenga acceso e intente nuevamente.")
-    await ctx.send("\n\n".join(results) if results else "⚠️ No se encontraron enlaces válidos")
+            if not folder_id:
+                continue
 
+            try:
+                items = service.files().list(
+                    q=f"'{folder_id}' in parents and trashed=false",
+                    fields="files(id,name,mimeType)"
+                ).execute().get("files", [])
+
+                raw_caps = trad_caps = clean_caps = type_caps = []
+
+                for item in items:
+                    if item["mimeType"] != "application/vnd.google-apps.folder":
+                        continue
+                    name_lower = item["name"].lower()
+                    if "raw" in name_lower:
+                        raw_caps = traverse_folder(service, item["id"])
+                    elif "trad" in name_lower or "traducción" in name_lower:
+                        trad_caps = traverse_trad(service, item["id"])
+                    elif "clean" in name_lower or "limpieza" in name_lower:
+                        clean_caps = traverse_folder(service, item["id"])
+                    elif "type" in name_lower or "edición" in name_lower:
+                        type_caps = traverse_folder(service, item["id"])
+
+                # --- 💖 Embed bonito con color sakura ---
+                embed = discord.Embed(
+                    title="🌸 Saku — Revisión de Drive",
+                    description=f"**📁 Carpeta revisada:**\n{link}",
+                    color=0xFFB6C1  # Rosa sakura pastel
+                )
+                embed.add_field(name="💫 RAW", value=join_ranges(raw_caps), inline=True)
+                embed.add_field(name="💬 TRAD", value=join_ranges(trad_caps), inline=True)
+                embed.add_field(name="🧼 CLEAN", value=join_ranges(clean_caps), inline=True)
+                embed.add_field(name="🖋 TYPE", value=join_ranges(type_caps), inline=True)
+                embed.set_footer(text="Revisión completada con éxito 🌸")
+
+                await ctx.send(embed=embed)
+
+            except Exception as e:
+                embed_error = discord.Embed(
+                    title="⚠️ Saku — Error de acceso",
+                    description="No se pudo acceder a la API. Verifica permisos de Drive.\n"
+                                "Debe permitir acceso a **soulferre1995@gmail.com**",
+                    color=0xFFD1DC  # Rosa claro más suave
+                )
+                embed_error.set_footer(text=str(e))
+                await ctx.send(embed=embed_error)
+#    await ctx.send("✨ Revisión finalizada, todo listo 💖")
 # --- Ejecutar bot ---
 if not getattr(sys.modules[__name__], "_bot_started", False):
     setattr(sys.modules[__name__], "_bot_started", True)
