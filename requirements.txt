@@ -1,8 +1,21 @@
+# Librerías base del bot
 discord.py==2.3.2
+
+# Google API (Drive y demás servicios)
 google-api-python-client==2.185.0
 google-auth==2.42.0
 google-auth-oauthlib==1.2.2
 google-auth-httplib2==0.2.0
+
+# Webhooks y mini servidor (Flask)
 flask==3.1.2
-requests==2.32.5
+requests==2.32.3
 packaging==24.1
+
+# Concurrencia y performance (para los procesos paralelos)
+aiohttp==3.10.10
+asyncio==3.4.3
+
+# Utilidades opcionales y debugging
+tqdm==4.67.1        # barras de progreso
+colorama==0.4.6     # colores en consola
