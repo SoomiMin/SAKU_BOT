@@ -160,7 +160,7 @@ def evento_j(soup):
 def detectar_evento(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=20)
         if r.status_code != 200:
             return None, "Error HTTP"
 
@@ -211,7 +211,7 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
 
     for intento in range(1, retries + 1):
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
@@ -267,7 +267,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
 
     for intento in range(1, retries + 1):
         try:
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, "html.parser")
@@ -332,7 +332,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         try:
             login_url = "https://catharsisworld.dig-it.info/login"
             payload = {"username": cath_user, "password": cath_pass}
-            resp = session.post(login_url, data=payload, headers=headers, timeout=10)
+            resp = session.post(login_url, data=payload, headers=headers, timeout=15)
             if resp.status_code == 200:
                 print("✅ Login en Catharsis exitoso (usuario real).")
             else:
@@ -342,7 +342,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
 
     for intento in range(1, retries + 1):
         try:
-            response = session.get(url, headers=headers, cookies=cookies, timeout=10)
+            response = session.get(url, headers=headers, cookies=cookies, timeout=15)
             response.raise_for_status()
             response.encoding = "utf-8"
             soup = BeautifulSoup(response.text, "html.parser")
