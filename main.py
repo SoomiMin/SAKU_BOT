@@ -529,12 +529,12 @@ async def drive(ctx):
     # 🌸 Si no se encontró ningún enlace Drive
     if not found_any:
         embed_no_links = discord.Embed(
-            title="😿 Saku — Sin enlaces Drive",
+            title="🌸 Saku_Drive — *Sin enlaces fijados*",
             description="No encontré ningún enlace de Google Drive en los mensajes fijados.\n"
                         "Fíjalo primero y vuelve a intentarlo 💖",
             color=0xFFB6C1
         )
-        embed_no_links.set_footer(text="saku_drive.py — editado por Rami 🌸")
+        embed_no_links.set_footer(text="Asegúrate de fijar el enlace DRIVE apropiadamente 💖")
         await ctx.send(embed=embed_no_links)
 
 # ----------------------
@@ -637,7 +637,7 @@ async def sitio(ctx):
     # --- Si no hay enlaces válidos ---
     if not encontrados:
         embed = discord.Embed(
-            title="🌸 Saku_Search — Sin enlaces encontrados",
+            title="🌸 Saku_Search — *Sin enlaces encontrados*",
             description="No hay enlaces válidos de Eternal, LectorJPG o Catharsis en los mensajes fijados.",
             color=0xF8C8DC
         )
