@@ -456,21 +456,25 @@ async def on_ready():
 # ----------------------
 # Comando !drive
 # ----------------------
-@bot.command()
+@bot.command(name="drive")
 async def drive(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-    # Lógica completa de tu Saku_Drive aquí
+
     await ctx.send("🔍 Buscando enlaces de Drive en los mensajes fijados...")
 
     creds = authenticate()
     service = build("drive", "v3", credentials=creds)
     pinned_messages = await ctx.channel.pins()
 
+    found_any = False  # 🌸 Bandera para saber si hubo enlaces
+
     for msg in pinned_messages:
         links = extract_drive_links(msg.content)
         if not links:
             continue
+
+        found_any = True  # Sí hubo al menos un enlace
 
         for link in links:
             folder_id = extract_id(link)
@@ -502,7 +506,7 @@ async def drive(ctx):
                 embed = discord.Embed(
                     title="🌸 Saku — Revisión de Drive",
                     description=f"**📁 Carpeta revisada:**\n{link}",
-                    color=0xFFB6C1  # Rosa sakura pastel
+                    color=0xFFB6C1
                 )
                 embed.add_field(name="💫 RAW", value=join_ranges(raw_caps), inline=True)
                 embed.add_field(name="💬 TRAD", value=join_ranges(trad_caps), inline=True)
@@ -517,11 +521,21 @@ async def drive(ctx):
                     title="⚠️ Saku — Error de acceso",
                     description="No se pudo acceder a la API. Verifica permisos de Drive.\n"
                                 "Debe permitir acceso a **soulferre1995@gmail.com**",
-                    color=0xFFD1DC  # Rosa claro más suave
+                    color=0xFFD1DC
                 )
                 embed_error.set_footer(text=str(e))
                 await ctx.send(embed=embed_error)
-#    await ctx.send("✨ Revisión finalizada, todo listo 💖")
+
+    # 🌸 Si no se encontró ningún enlace Drive
+    if not found_any:
+        embed_no_links = discord.Embed(
+            title="😿 Saku — Sin enlaces Drive",
+            description="No encontré ningún enlace de Google Drive en los mensajes fijados.\n"
+                        "Fíjalo primero y vuelve a intentarlo 💖",
+            color=0xFFB6C1
+        )
+        embed_no_links.set_footer(text="saku_drive.py — editado por Rami 🌸")
+        await ctx.send(embed=embed_no_links)
 
 # ----------------------
 # Comando !raw
