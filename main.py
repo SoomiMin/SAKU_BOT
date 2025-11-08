@@ -2,11 +2,14 @@ import os, re, discord, asyncio, requests, time
 from discord.ext import commands
 from bs4 import BeautifulSoup
 from datetime import datetime
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -17,9 +20,26 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# =======================
-# Funciones de Saku_Drive
-# =======================
+# — Configuración de la hoja
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+SHEET_NAME = os.getenv("SHEET_NAME")
+
+# — Crear credenciales de servicio
+SERVICE_ACCOUNT_FILE = "service_account.json"  # asegúrate que este archivo esté en tu Replit
+
+creds = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE,
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
+
+# — Crear cliente de Sheets
+sheet_service = build("sheets", "v4", credentials=creds)
+sheet = sheet_service.spreadsheets()
+
+# Funciones de Saku_Drive 
 def authenticate():
     SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
     creds = None
@@ -35,9 +55,6 @@ def authenticate():
             token.write(creds.to_json())
     return creds
 
-# Aquí van extract_drive_links, extract_id, folder_has_files, traverse_folder, traverse_trad, join_ranges...
-# (todo lo que ya tenías para !drive)
-# --- Funciones de Drive ---
 def extract_drive_links(text):
     return re.findall(r"https?://drive\.google\.com/(?:file/d|drive/(?:u/\d+/)?folders)/[a-zA-Z0-9_-]+", text)
 
@@ -95,9 +112,7 @@ def join_ranges(numbers):
     ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
     return " / ".join(ranges)
 
-# ======================
-# Funciones de Saku_RAW
-# ======================
+# Funciones de Saku_RAW 
 def evento_a(soup):
     contenedores = soup.select('astro-slot > div[data-hk]')
     if contenedores:
@@ -156,7 +171,7 @@ def evento_j(soup):
             extra = span.get_text(strip=True) if span else ""
             return f"{texto} {extra}".strip()
     return None
-    
+
 def detectar_evento(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -188,18 +203,15 @@ def detectar_evento(url):
     except Exception as e:
         return None, str(e)
     pass
-
-# ========================
+    
 # Funciones de Saku_Search
-# ========================
-# --- Función para uniformizar fechas a "X días atrás" ---
 MESES = {
     "enero": "January", "febrero": "February", "marzo": "March", "abril": "April",
     "mayo": "May", "junio": "June", "julio": "July", "agosto": "August",
     "septiembre": "September", "octubre": "October", "noviembre": "November",
     "diciembre": "December"
 }
-            
+
 def evento_eter(url, preestreno=False, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -446,17 +458,13 @@ def obtener_color(dias_str, sitio):
             return 0xE74C3C
     pass
 
-# ======================
 # Eventos de Discord
-# ======================
 @bot.event
 async def on_ready():
     print(f"✨ Bot en línea como {bot.user}")
 
-# ----------------------
 # Comando !drive
-# ----------------------
-@bot.command(name="drive")
+@bot.command()
 async def drive(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
@@ -537,9 +545,7 @@ async def drive(ctx):
         embed_no_links.set_footer(text="Asegúrate de fijar el enlace DRIVE apropiadamente 💖")
         await ctx.send(embed=embed_no_links)
 
-# ----------------------
 # Comando !raw
-# ----------------------
 @bot.command()
 async def raw(ctx):
     if ctx.guild.id not in GUILD_IDS:
@@ -600,19 +606,15 @@ async def raw(ctx):
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
         await ctx.send(embed=embed)  
 
-# ----------------------
 # Comando !sitio
-# ----------------------
 @bot.command()
 async def sitio(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-    # Lógica completa de tu Saku_Search aquí
+
     await ctx.send("🔍 Buscando enlaces de proyecto en los mensajes fijados...")
     pinned = await ctx.channel.pins()
     encontrados = False
-
-    # Lista de tareas en paralelo
     tasks = []
 
     for msg in pinned:
@@ -634,7 +636,6 @@ async def sitio(ctx):
             encontrados = True
             tasks.append(asyncio.to_thread(evento_cath, match_cath.group(0), preestreno=pre_cath))
 
-    # --- Si no hay enlaces válidos ---
     if not encontrados:
         embed = discord.Embed(
             title="🌸 Saku_Search — *Sin enlaces encontrados*",
@@ -644,8 +645,17 @@ async def sitio(ctx):
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
         return await ctx.send(embed=embed)
 
-    # --- Ejecutar todas las búsquedas a la vez ---
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Diccionario con todas las columnas separadas
+    resultado_dict = {
+        "catharsis_cap": "N/A",
+        "catharsis_date": "N/A",
+        "eternal_cap": "N/A",
+        "eternal_date": "N/A",
+        "lector_cap": "N/A",
+        "lector_date": "N/A"
+    }
 
     for res in resultados:
         if isinstance(res, Exception):
@@ -657,34 +667,191 @@ async def sitio(ctx):
             await ctx.send(embed=embed)
             continue
 
-        # Determinar el sitio y preparar el embed
-        sitio = "GENÉRICO"
-        if res.startswith("ETERNAL"):
-            sitio = "ETERNAL"
-            icono = "🌸"
-        elif res.startswith("LECTORJPG"):
-            sitio = "LECTORJPG"
-            icono = "📘"
-        elif res.startswith("CATHARSIS"):
-            sitio = "CATHARSIS"
-            icono = "💫"
-        else:
-            icono = "❓"
-
         cap_match = re.search(r'Capítulo: ([^\n]+)', res)
         act_match = re.search(r'Actualizado: ([^\n]+)', res)
 
-        if not cap_match or not act_match:
-            embed = discord.Embed(title=f"{icono} {sitio}", description=res, color=0xE74C3C)
-        else:
-            dias_texto = act_match.group(1)
-            embed = discord.Embed(
-                title=f"{icono} {sitio}",
-                description=f"Capítulo: {cap_match.group(1)}\nActualizado: {dias_texto}",
-                color=obtener_color(dias_texto, sitio)
-            )
+        dias_texto = act_match.group(1) if act_match else "N/A"
+        cap_texto = cap_match.group(1) if cap_match else "N/A"
+
+        # Determinar sitio y asignar a columnas correctas
+        if res.startswith("CATHARSIS"):
+            resultado_dict["catharsis_cap"] = cap_texto
+            resultado_dict["catharsis_date"] = dias_texto
+        elif res.startswith("ETERNAL"):
+            resultado_dict["eternal_cap"] = cap_texto
+            resultado_dict["eternal_date"] = dias_texto
+        elif res.startswith("LECTORJPG"):
+            resultado_dict["lector_cap"] = cap_texto
+            resultado_dict["lector_date"] = dias_texto
+
+        # Embed para mostrar al instante
+        sitio_icono = {"CATHARSIS": "💫", "ETERNAL": "🌸", "LECTORJPG": "📘"}.get(res.split()[0], "❓")
+        embed = discord.Embed(
+            title=f"{sitio_icono} {res.split()[0]}",
+            description=f"Capítulo: {cap_texto}\nActualizado: {dias_texto}",
+            color=obtener_color(dias_texto, res.split()[0])
+        )
         await ctx.send(embed=embed)
-# ======================
+
+    canal = ctx.channel.name
+    escribir_a_hoja(canal, resultado_dict)
+
+def escribir_a_hoja(canal, resultados):
+    try:
+        range_name = f"{SHEET_NAME}!A2:H"  # <-- empieza en fila 2
+        resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        values = resp.get("values", [])
+
+        fila_existente = None
+        ultimo_item = 0
+
+        for i, row in enumerate(values, start=2):  # <-- offset de fila 2
+            if len(row) > 0 and row[0].isdigit():
+                ultimo_item = max(ultimo_item, int(row[0]))
+            if len(row) > 1 and row[1].strip().lower() == canal.lower():
+                fila_existente = i
+
+        item_val = fila_existente - 1 if fila_existente else (ultimo_item + 1)
+        fila = [
+            str(item_val),
+            canal,
+            resultados.get("catharsis_cap", "N/A"),
+            resultados.get("catharsis_date", "N/A"),
+            resultados.get("eternal_cap", "N/A"),
+            resultados.get("eternal_date", "N/A"),
+            resultados.get("lector_cap", "N/A"),
+            resultados.get("lector_date", "N/A")
+        ]
+
+        body = {"values": [fila]}
+
+        if fila_existente:
+            rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:H{fila_existente}"
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=rango_actualizar,
+                valueInputOption="RAW",
+                body=body
+            ).execute()
+        else:
+            sheet.values().append(
+                spreadsheetId=SPREADSHEET_ID,
+                range=range_name,
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body=body
+            ).execute()
+
+    except Exception as e:
+        print(f"❌ Error al escribir en la hoja: {e}")
+
+# Comando !larry
+@bot.command()
+async def table(ctx):
+    if ctx.guild.id not in GUILD_IDS:
+        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
+
+    await ctx.send("🔍 Analizando lista...")
+
+    def extraer_dias(texto):
+        if not texto or texto.lower() in ["n/a", "no disponible"]:
+            return None
+        if "mes" in texto:
+            m = re.search(r"(\d+)\s*mes", texto)
+            return int(m.group(1)) * 30 if m else 30
+        m = re.search(r"(\d+)\s*día", texto)
+        return int(m.group(1)) if m else None
+
+    def obtener_icono(sitio, dias):
+        if dias is None:
+            return "⚪"
+        if sitio == "CATHARSIS":
+            if dias > 14:
+                return "🔴"
+            elif dias > 7:
+                return "🟡"
+            else:
+                return "🟢"
+        else:  # ETERNAL o LECTOR
+            if dias > 60:
+                return "🔴"
+            elif dias > 45:
+                return "🟡"
+            else:
+                return "🟢"
+
+    try:
+        range_name = f"{SHEET_NAME}!A2:H"
+        resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        values = resp.get("values", [])
+
+        if not values:
+            return await ctx.send("❌ No hay datos registrados en la hoja.")
+
+        proyectos = []
+        for row in values:
+            if len(row) < 8:
+                continue
+            canal_nombre = row[1]
+            cath_date = row[3]
+            eter_date = row[5]
+            lec_date = row[7]
+
+            urg_total = sum(
+                d for d in [
+                    extraer_dias(cath_date),
+                    extraer_dias(eter_date),
+                    extraer_dias(lec_date)
+                ] if d is not None
+            )
+
+            proyectos.append({
+                "canal": canal_nombre,
+                "cath_cap": row[2], "cath_date": cath_date,
+                "eter_cap": row[4], "eter_date": eter_date,
+                "lec_cap": row[6], "lec_date": lec_date,
+                "urg": urg_total
+            })
+
+        proyectos.sort(key=lambda x: x["urg"], reverse=True)
+
+        total = len(proyectos)
+        por_bloque = 15
+        grupos = [proyectos[i:i+por_bloque] for i in range(0, total, por_bloque)]
+
+        for i, grupo in enumerate(grupos, start=1):
+            texto = ""
+            for p in grupo:
+                canal_obj = discord.utils.get(ctx.guild.channels, name=p["canal"])
+                canal_mencion = f"<#{canal_obj.id}>" if canal_obj else f"#{p['canal']}"
+
+                # convertir fechas a días
+                d_cath = extraer_dias(p["cath_date"])
+                d_eter = extraer_dias(p["eter_date"])
+                d_lec = extraer_dias(p["lec_date"])
+
+                # obtener iconos
+                i_cath = obtener_icono("CATHARSIS", d_cath)
+                i_eter = obtener_icono("ETERNAL", d_eter)
+                i_lec = obtener_icono("LECTOR", d_lec)
+
+                texto += (
+                    f"**{canal_mencion}**\n"
+                    f"{i_cath} **CATH**: {p['cath_cap']} - *({p['cath_date']})*\n"
+                    f"{i_eter} **ETER**: {p['eter_cap']} - *({p['eter_date']})*\n"
+                    f"{i_lec} **LEC**: {p['lec_cap']} - *({p['lec_date']})*\n\n"
+                )
+
+            embed = discord.Embed(
+                title=f"📋 Resumen de proyectos ({min(i*por_bloque, total)}/{total})",
+                description=texto,
+                color=0xF8C8DC
+            )
+            await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"❌ Error al obtener los datos: {e}")
+        print(f"❌ Error en !larry: {e}")
+
 # Ejecutar bot
-# ======================
 bot.run(TOKEN)
