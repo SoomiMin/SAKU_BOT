@@ -377,7 +377,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
                 except:
                     pass
 
-            fecha_text = fecha_text.replace("ago", "").strip()
+            fecha_text = fecha_text.replace(" ago", "").strip()
             fecha_text = fecha_text.replace("hours", "horas").replace("hour", "hora")
             fecha_text = fecha_text.replace("days", "días").replace("day", "día")
             fecha_text = fecha_text.replace("minutes", "minutos").replace("minute", "minuto")
