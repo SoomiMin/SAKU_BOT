@@ -426,11 +426,19 @@ def fecha_a_dias_atras(fecha_str):
 
     horas_match = re.search(r'(\d+)\s*hora', fecha_str)
     dias_match = re.search(r'(\d+)\s*día', fecha_str)
+    meses_match = re.search(r'(\d+)\s*mes', fecha_str)
+
     if horas_match:
         horas = int(horas_match.group(1))
         return "0 días atrás" if horas < 24 else f"{horas//24} días atrás"
+
     if dias_match:
         dias = int(dias_match.group(1))
+        return f"{dias} días atrás"
+
+    if meses_match:
+        meses = int(meses_match.group(1))
+        dias = meses * 30
         return f"{dias} días atrás"
 
     return fecha_str
@@ -852,6 +860,143 @@ async def table(ctx):
     except Exception as e:
         await ctx.send(f"❌ Error al obtener los datos: {e}")
         print(f"❌ Error en !larry: {e}")
+
+# Comando !acceso
+@bot.command()
+@commands.has_role(1357527939226533920)  # Rol ADMIN
+async def acceso(ctx, user: discord.Member = None):
+    """Otorga acceso de editor a un usuario según la lista USUARIOS."""
+    if user is None:
+        embed = discord.Embed(
+            title="🌸 Saku — Acceso",
+            description=f"Debes mencionar a un usuario. Ejemplo: `!acceso @usuario`",
+            color=0xFFB6C1
+        )
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        # Obtener enlace Drive fijado en el canal
+        pinned = await ctx.channel.pins()
+        drive_link = next((m.content for m in pinned if "drive.google.com" in m.content), None)
+
+        if not drive_link:
+            embed = discord.Embed(
+                title="🌸 Saku — Acceso",
+                description=f"⚠️ No hay enlaces de Google Drive fijados en este canal.",
+                color=0xFFB6C1
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Extraer ID del archivo o carpeta
+        match = re.search(r"/(?:folders|file)/([a-zA-Z0-9_-]+)", drive_link)
+        if not match:
+            embed = discord.Embed(
+                title="🌸 Saku — Acceso",
+                description=f"❌ No se pudo identificar el ID de archivo o carpeta de Google Drive.",
+                color=0xFFB6C1
+            )
+            await ctx.send(embed=embed)
+            return
+
+        file_id = match.group(1)
+
+        # Leer la hoja USUARIOS
+        USERS_SHEET_NAME = os.getenv("USERS_SHEET_NAME")
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{USERS_SHEET_NAME}!A2:C"
+        ).execute().get("values", [])
+
+        # Buscar usuario en la lista
+        discord_id = str(user.id)
+        matched = None
+        for row in data:
+            if len(row) >= 3 and row[1] == discord_id:
+                matched = row
+                break
+
+        if not matched:
+            embed = discord.Embed(
+                title="🌸 Saku — Acceso",
+                description=f"❌ Usuario {user.mention} no encontrado en la lista USUARIOS.",
+                color=0xFFB6C1
+            )
+            await ctx.send(embed=embed)
+            return
+
+        email = matched[2]
+
+        # Crear cliente de Drive
+        drive_service = build("drive", "v3", credentials=creds)
+
+        # Verificar si ya tiene acceso
+        try:
+            permissions = drive_service.permissions().list(fileId=file_id, fields="permissions(emailAddress,role)").execute()
+            existing = [p for p in permissions.get("permissions", []) if p.get("emailAddress") == email]
+            if existing:
+                embed = discord.Embed(
+                    title="🌸 Saku — Acceso",
+                    description=f"⚠️ {user.mention} ya tenía acceso como **{existing[0]['role']}**.",
+                    color=0xFFB6C1
+                )
+                await ctx.send(embed=embed)
+                return
+        except Exception:
+            pass  # Si no puede listar permisos, igual intenta otorgar acceso
+
+        # Intentar otorgar acceso de editor
+        try:
+            drive_service.permissions().create(
+                fileId=file_id,
+                body={
+                    "type": "user",
+                    "role": "writer",
+                    "emailAddress": email
+                },
+                fields="id"
+            ).execute()
+            embed = discord.Embed(
+                title="🌸 Saku — Acceso",
+                description=f"✅ Acceso concedido a {user.mention}.",
+                color=0xFFB6C1
+            )
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            err_text = str(e)
+
+            # Caso especial: el correo no puede recibir permisos (por ser dueño u otro motivo)
+            if "invalid or not applicable for the given permission type" in err_text:
+                embed = discord.Embed(
+                    title="🌸 Saku — Acceso",
+                    description=(
+                        f"⚠️ No se pudo otorgar acceso a {user.mention}.\n"
+                        f"Posiblemente ya es propietario o el correo no acepta permisos directos.\n\n"
+                        f"🔔 <@&1357527939226533920>, revise manualmente el acceso al Drive."
+                    ),
+                    color=0xFFC0CB
+                )
+                await ctx.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="🌸 Saku — Acceso",
+                    description=f"❌ API no conectada, asegúrese de que SAKU_BOT tenga acceso al Drive solicitado.",
+                    color=0xFFB6C1
+                )
+                await ctx.send(embed=embed)
+
+            print(f"[ERROR acceso] {e}")
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="🌸 Saku — Acceso",
+            description=f"⚠️ Ocurrió un error inesperado al procesar el comando.",
+            color=0xFFB6C1
+        )
+        await ctx.send(embed=embed)
+        print(f"[ERROR acceso general] {e}")
 
 # Ejecutar bot
 bot.run(TOKEN)
