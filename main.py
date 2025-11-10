@@ -998,5 +998,71 @@ async def acceso(ctx, user: discord.Member = None):
         await ctx.send(embed=embed)
         print(f"[ERROR acceso general] {e}")
 
+@bot.command()
+async def gen(ctx):
+    if ctx.guild.id not in GUILD_IDS:
+        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
+    await ctx.send("🔍 Procesando, porfavor espere...")
+    try:
+        # 1️⃣ Leer la columna B de la hoja LISTA (canales)
+        range_name = f"{SHEET_NAME}!B2:B"  # columna B desde fila 2
+        resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        canales = [row[0].strip() for row in resp.get("values", []) if row]
+
+        if not canales:
+            return await ctx.send("❌ No se encontraron canales en la columna B.")
+
+        # 2️⃣ Enviar mensaje de progreso inicial
+        progress_msg = await ctx.send(f"🔄 Autollamado de sitios, revisando canales 0/{len(canales)}")
+
+        # 3️⃣ Recorrer cada canal y ejecutar !sitio
+        for i, canal_nombre in enumerate(canales, start=1):
+            canal_obj = discord.utils.get(ctx.guild.channels, name=canal_nombre)
+            if not canal_obj:
+                await progress_msg.edit(content=f"⚠ Canal **{canal_nombre}** no encontrado. {i}/{len(canales)}")
+                await asyncio.sleep(1)
+                continue
+
+            # Actualizar mensaje de progreso
+            await progress_msg.edit(content=f"⏳ Procesando canal {i}/{len(canales)}: **{canal_nombre}**")
+
+            # DummyCtx para invocar !sitio en el canal correcto
+            class DummyMessage:
+                def __init__(self, author, channel):
+                    self.author = author
+                    self.channel = channel
+                    self.attachments = []
+
+            class DummyCtx:
+                def __init__(self, bot, channel, guild, author, send):
+                    self.bot = bot
+                    self.channel = channel
+                    self.guild = guild
+                    self.author = author
+                    self.send = send
+                    self.message = DummyMessage(author, channel)
+                    self.view = None
+
+            dummy_ctx = DummyCtx(
+                bot=ctx.bot,
+                channel=canal_obj,
+                guild=ctx.guild,
+                author=ctx.author,
+                send=canal_obj.send  # ⚡ enviará embeds en el canal correcto
+            )
+
+            await sitio.invoke(dummy_ctx)
+            await asyncio.sleep(3)  # espera de 3 segundos antes del siguiente canal
+
+        # 4️⃣ Finalizar mensaje de progreso
+        await progress_msg.edit(content=f"✅ Actualización completada: revisados {len(canales)}/{len(canales)} canales")
+
+        # 5️⃣ Llamar !table en el canal de invocación
+        await table.invoke(ctx)
+
+    except Exception as e:
+        await ctx.send(f"❌ Error durante !gen: {e}")
+        print(f"❌ Error en comando !gen: {e}")
+
 # Ejecutar bot
 bot.run(TOKEN)
