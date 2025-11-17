@@ -228,8 +228,8 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
             soup = BeautifulSoup(response.text, "html.parser")
 
             h1_blocks = soup.find_all("h1", class_="font-semibold text-medium")
-            caps = "No encontrado"
-            actual = "No encontrado"
+            caps = "N/A"
+            actual = "N/A"
 
             for h1 in h1_blocks:
                 text = h1.get_text(strip=True)
@@ -284,9 +284,12 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, "html.parser")
 
-            block = soup.select_one("a.group.relative.flex")
-            if not block:
+            # 📌 tomar el último update y no el primero
+            blocks = soup.select("a.group.relative.flex")
+            if not blocks:
                 return "❌ No se encontró ningún capítulo."
+
+            block = blocks[-1]  # <<--- ESTE ES EL MÁS RECIENTE
 
             cap_span = block.select_one("span.truncate.text-sm")
             cap_text = cap_span.get_text(strip=True) if cap_span else "Desconocido"
@@ -304,8 +307,8 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
 
             fecha_span = block.select_one("span[class*='text-white/50'], span[class*='text-white/60']")
             fecha_text = fecha_span.get_text(strip=True) if fecha_span else "Desconocido"
-            fecha_text = fecha_text.encode("latin1", "ignore").decode("utf-8", "ignore")
 
+            fecha_text = fecha_text.encode("latin1", "ignore").decode("utf-8", "ignore")
             fecha_text = fecha_a_dias_atras(fecha_text)
 
             return f"LECTORJPG\n> Capítulo: {cap}\n> Actualizado: {fecha_text}"
@@ -322,7 +325,6 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             continue
 
     return "❌ No se pudo acceder a LectorJPG después de varios intentos."
-    pass
 
 def evento_cath(url, preestreno=False, retries=3, delay=5):
     headers = {
@@ -683,10 +685,12 @@ async def sitio(ctx):
         pre_eter = "Eternal: 00" in msg.content
         pre_lec = "Lector: 00" in msg.content
         pre_cath = "Catharsis: 00" in msg.content
+        pre_col = "Colorcito: 00" in msg.content
 
         match_eter = re.search(r"https?://(?:www\.)?eternalmangas\.org/[^\s>]+", msg.content)
         match_lec = re.search(r"https?://(?:www\.)?lectorjpg\.com/series/[^\s>]+", msg.content)
         match_cath = re.search(r"https?://(?:www\.)?catharsisworld\.dig-it\.info/[^\s>]+", msg.content)
+        match_col = re.search(r"https?://(?:www\.)?colorcitoscan\.com/[^\s>]+", msg.content)
 
         if match_eter:
             encontrados = True
@@ -697,11 +701,14 @@ async def sitio(ctx):
         if match_cath:
             encontrados = True
             tasks.append(asyncio.to_thread(evento_cath, match_cath.group(0), preestreno=pre_cath))
+        if match_col:
+            encontrados = True
+            tasks.append(asyncio.to_thread(evento_col, match_col.group(0), preestreno=pre_col))
 
     if not encontrados:
         embed = discord.Embed(
             title="🌸 Saku_Search — *Sin enlaces encontrados*",
-            description="No hay enlaces válidos de Eternal, LectorJPG o Catharsis en los mensajes fijados.",
+            description="No hay enlaces válidos de Eternal|LectorJPG|Catharsis|Colorcito en los mensajes fijados.",
             color=0xF8C8DC
         )
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
@@ -716,7 +723,9 @@ async def sitio(ctx):
         "eternal_cap": "N/A",
         "eternal_date": "N/A",
         "lector_cap": "N/A",
-        "lector_date": "N/A"
+        "lector_date": "N/A",
+        "col_cap": "N/A",
+        "col_date": "N/A"
     }
 
     for res in resultados:
@@ -745,9 +754,12 @@ async def sitio(ctx):
         elif res.startswith("LECTORJPG"):
             resultado_dict["lector_cap"] = cap_texto
             resultado_dict["lector_date"] = dias_texto
+        elif res.startswith("COLORCITO"):
+            resultado_dict["col_cap"] = cap_texto
+            resultado_dict["col_date"] = dias_texto
 
         # Embed para mostrar al instante
-        sitio_icono = {"CATHARSIS": "💫", "ETERNAL": "🌸", "LECTORJPG": "📘"}.get(res.split()[0], "❓")
+        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "COLORCITO": "🖍️"}.get(res.split()[0], "❓")
         embed = discord.Embed(
             title=f"{sitio_icono} {res.split()[0]}",
             description=f"Capítulo: {cap_texto}\nActualizado: {dias_texto}",
@@ -756,11 +768,12 @@ async def sitio(ctx):
         await ctx.send(embed=embed)
 
     canal = ctx.channel.name
-    escribir_a_hoja(canal, resultado_dict)
+    categoria = ctx.channel.category.name if ctx.channel.category else "Sin categoría"
+    escribir_a_hoja(canal, categoria,resultado_dict)
 
-def escribir_a_hoja(canal, resultados):
+def escribir_a_hoja(canal, categoria, resultados):
     try:
-        range_name = f"{SHEET_NAME}!A2:H"  # <-- empieza en fila 2
+        range_name = f"{SHEET_NAME}!A2:K"  # <-- empieza en fila 2
         resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
         values = resp.get("values", [])
 
@@ -777,18 +790,21 @@ def escribir_a_hoja(canal, resultados):
         fila = [
             str(item_val),
             canal,
+            categoria,
             resultados.get("catharsis_cap", "N/A"),
             resultados.get("catharsis_date", "N/A"),
             resultados.get("eternal_cap", "N/A"),
             resultados.get("eternal_date", "N/A"),
             resultados.get("lector_cap", "N/A"),
-            resultados.get("lector_date", "N/A")
+            resultados.get("lector_date", "N/A"),
+            resultados.get("col_cap", "N/A"),
+            resultados.get("col_date", "N/A")        
         ]
 
         body = {"values": [fila]}
 
         if fila_existente:
-            rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:H{fila_existente}"
+            rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:K{fila_existente}"
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
                 range=rango_actualizar,
@@ -843,7 +859,7 @@ async def table(ctx):
                 return "🟢"
 
     try:
-        range_name = f"{SHEET_NAME}!A2:H"
+        range_name = f"{SHEET_NAME}!A2:K"
         resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
         values = resp.get("values", [])
 
@@ -852,26 +868,31 @@ async def table(ctx):
 
         proyectos = []
         for row in values:
-            if len(row) < 8:
+            if len(row) < 10:
                 continue
             canal_nombre = row[1]
-            cath_date = row[3]
-            eter_date = row[5]
-            lec_date = row[7]
+            categoria = row[2] if len(row) > 2 else "Sin categoría"
+            cath_date = row[4]
+            eter_date = row[6]
+            lec_date = row[8]
+            col_date = row[10]
 
             urg_total = sum(
                 d for d in [
                     extraer_dias(cath_date),
                     extraer_dias(eter_date),
-                    extraer_dias(lec_date)
+                    extraer_dias(lec_date),
+                    extraer_dias(col_date)
                 ] if d is not None
             )
 
             proyectos.append({
                 "canal": canal_nombre,
-                "cath_cap": row[2], "cath_date": cath_date,
-                "eter_cap": row[4], "eter_date": eter_date,
-                "lec_cap": row[6], "lec_date": lec_date,
+                "categoria": categoria,
+                "cath_cap": row[3], "cath_date": cath_date,
+                "eter_cap": row[5], "eter_date": eter_date,
+                "lec_cap": row[7], "lec_date": lec_date,
+                "col_cap": row[9], "col_date": col_date,
                 "urg": urg_total
             })
 
@@ -891,17 +912,20 @@ async def table(ctx):
                 d_cath = extraer_dias(p["cath_date"])
                 d_eter = extraer_dias(p["eter_date"])
                 d_lec = extraer_dias(p["lec_date"])
+                d_col = extraer_dias(p["col_date"])
 
                 # obtener iconos
                 i_cath = obtener_icono("CATHARSIS", d_cath)
                 i_eter = obtener_icono("ETERNAL", d_eter)
                 i_lec = obtener_icono("LECTOR", d_lec)
+                i_col = obtener_icono("COLOR", d_col)
 
                 texto += (
-                    f"**{canal_mencion}**\n"
-                    f"{i_cath} **CATH**: {p['cath_cap']} - *({p['cath_date']})*\n"
-                    f"{i_eter} **ETER**: {p['eter_cap']} - *({p['eter_date']})*\n"
-                    f"{i_lec} **LEC**: {p['lec_cap']} - *({p['lec_date']})*\n\n"
+                    f"**{canal_mencion} — {p['categoria']}**\n"
+                    f"{i_cath} **CATHARSIS**: {p['cath_cap']} - *({p['cath_date']})*\n"
+                    f"{i_eter} **ETERNAL**: {p['eter_cap']} - *({p['eter_date']})*\n"
+                    f"{i_lec} **LECTORJPG**: {p['lec_cap']} - *({p['lec_date']})*\n"
+                    f"{i_col} **COLORCITO**: {p['col_cap']} - *({p['col_date']})*\n\n"
                 )
 
             embed = discord.Embed(
@@ -913,7 +937,7 @@ async def table(ctx):
 
     except Exception as e:
         await ctx.send(f"❌ Error al obtener los datos: {e}")
-        print(f"❌ Error en !larry: {e}")
+        print(f"❌ Error en !table: {e}")
 
 # Comando !acceso
 @bot.command()
