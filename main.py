@@ -398,6 +398,60 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
     return "❌ No se pudo acceder a Catharsis después de varios intentos."
     pass
 
+def evento_col(url, preestreno=False, retries=3, delay=5):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/142.0.0.0 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Referer": "https://colorcitoscan.com/"
+    }
+    for intento in range(1, retries + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            response.encoding = "utf-8"
+            soup = BeautifulSoup(response.text, "html.parser")
+            # Seleccionar todos los bloques de capítulo
+            bloques = soup.select("div.w-full.grid.grid-cols-3 a")
+            if not bloques:
+                return "❌ No se encontraron capítulos en Colorcito."
+            ultimo = bloques[0]  # tomamos el primero (el más reciente)
+            cap_elem = ultimo.select_one("p.font-semibold")
+            tiempo_elem = ultimo.select("p.font-montserrat")
+            cap_text = cap_elem.get_text(strip=True) if cap_elem else "Desconocido"
+            tiempo_text = tiempo_elem[-1].get_text(strip=True) if tiempo_elem else "Desconocido"
+            # Extraer número de capítulo
+            cap_match = re.search(r'Cap\.?\s*(\d+)', cap_text, re.I)
+            cap = cap_match.group(1) if cap_match else cap_text
+            if preestreno:
+                try:
+                    cap_num = int(cap)
+                    if cap_num > 0:
+                        cap_num -= 1
+                    cap = str(cap_num)
+                except:
+                    pass
+            # Normalizar texto de tiempo como en cath
+            tiempo_text = tiempo_text.replace(" ago", "").strip()
+            tiempo_text = tiempo_text.replace("hours", "horas").replace("hour", "hora")
+            tiempo_text = tiempo_text.replace("days", "días").replace("day", "día")
+            tiempo_text = tiempo_text.replace("minutes", "minutos").replace("minute", "minuto")
+            # Función auxiliar que ya tienes
+            tiempo_text = fecha_a_dias_atras(tiempo_text)
+            return f"COLORCITO\n> Capítulo: {cap}\n> Actualizado: {tiempo_text}"
+        except requests.exceptions.HTTPError as e:
+            if response.status_code in [503, 429, 520]:
+                print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
+                time.sleep(delay)
+                continue
+            return f"❌ Error HTTP: {e}"
+        except Exception as e:
+            print(f"⚠ Intento {intento}/{retries} falló: {e}")
+            time.sleep(delay)
+            continue
+    return "❌ No se pudo acceder a Colorcito después de varios intentos."
+
 def fecha_a_dias_atras(fecha_str):
     fecha_str = fecha_str.strip().lower()
 
