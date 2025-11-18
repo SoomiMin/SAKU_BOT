@@ -899,7 +899,7 @@ async def table(ctx):
         proyectos.sort(key=lambda x: x["urg"], reverse=True)
 
         total = len(proyectos)
-        por_bloque = 15
+        por_bloque = 10
         grupos = [proyectos[i:i+por_bloque] for i in range(0, total, por_bloque)]
 
         for i, grupo in enumerate(grupos, start=1):
