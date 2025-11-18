@@ -203,7 +203,7 @@ def detectar_evento(url):
     except Exception as e:
         return None, str(e)
     pass
-    
+
 # Funciones de Saku_Search
 MESES = {
     "enero": "January", "febrero": "February", "marzo": "March", "abril": "April",
@@ -327,12 +327,23 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
     return "❌ No se pudo acceder a LectorJPG después de varios intentos."
 
 def evento_cath(url, preestreno=False, retries=3, delay=5):
+
+# --- Reparación automática solo si el dominio es el viejo ---
+    if "catharsisworld.dig-it.info" in url:
+        url = url.replace("catharsisworld.dig-it.info", "catharsisworld.vxviral.xyz")
+
+# Extraer dominio final del URL ya corregido
+    try:
+        dominio = url.split("/")[2]  # ejemplo: catharsisworld.vxviral.xyz
+    except:
+        dominio = "catharsisworld.vxviral.xyz"  # fallback seguro
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/142.0.0.0 Safari/537.36",
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Referer": "https://catharsisworld.dig-it.info/"
+        "Referer": f"https://{dominio}/"
     }
 
     cath_user = os.getenv("CATH_USER", "")
@@ -344,7 +355,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
 
     if cath_user and cath_pass:
         try:
-            login_url = "https://catharsisworld.dig-it.info/login"
+            login_url = f"https://{dominio}/login"
             payload = {"username": cath_user, "password": cath_pass}
             resp = session.post(login_url, data=payload, headers=headers, timeout=15)
             if resp.status_code == 200:
@@ -624,7 +635,7 @@ async def raw(ctx):
         urls = re.findall(r"https?://[^\s>]+", msg.content)
         for url in urls:
             if any(x in url for x in [
-                "eternalmangas.org", "lectorjpg.com", "catharsisworld.dig-it.info", "drive.google.com"
+                "eternalmangas.org", "lectorjpg.com", "catharsisworld", "drive.google.com"
             ]):
                 continue
 
@@ -689,7 +700,7 @@ async def sitio(ctx):
 
         match_eter = re.search(r"https?://(?:www\.)?eternalmangas\.org/[^\s>]+", msg.content)
         match_lec = re.search(r"https?://(?:www\.)?lectorjpg\.com/series/[^\s>]+", msg.content)
-        match_cath = re.search(r"https?://(?:www\.)?catharsisworld\.dig-it\.info/[^\s>]+", msg.content)
+        match_cath = re.search(r"https?://(?:www\.)?catharsisworld\.[^/]+/[^\s>]+", msg.content)
         match_col = re.search(r"https?://(?:www\.)?colorcitoscan\.com/[^\s>]+", msg.content)
 
         if match_eter:
