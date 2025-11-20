@@ -582,7 +582,7 @@ async def drive(ctx):
                         trad_caps = traverse_trad(service, item["id"])
                     elif "clean" in name_lower or "limpieza" in name_lower:
                         clean_caps = traverse_folder(service, item["id"])
-                    elif "type" in name_lower or "edición" in name_lower:
+                    elif "type" in name_lower or "edi" in name_lower:
                         type_caps = traverse_folder(service, item["id"])
 
                 # --- 💖 Embed bonito con color sakura ---
