@@ -1580,7 +1580,7 @@ async def update_cmd(ctx: commands.Context):
         channel_input = msg1.content.strip()
 
         # 2) pedir singular/plural
-        await ctx.send("¿Responde `1` para **CAPÍTULO** o `2` para **CAPÍTULOS**.")
+        await ctx.send("`1` para **CAPÍTULO**\n`2` para **CAPÍTULOS**.")
         msg2 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
         choice = msg2.content.strip()
         if choice not in ("1", "2"):
