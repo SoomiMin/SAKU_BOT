@@ -10,6 +10,7 @@ from google.auth.transport.requests import Request
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from typing import Optional, Dict, Any, List
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -23,6 +24,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # — Configuración de la hoja
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
+SHEET_NAME2 = os.getenv("SHEET_NAME2")
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"  # asegúrate que este archivo esté en tu Replit
@@ -532,6 +534,409 @@ def obtener_color(dias_str, sitio):
         else:
             return 0xE74C3C
     pass
+
+# --- Constantes / variables fijas ---
+LINK_TELE = os.getenv("LINK_TELEGRAM", "https://t.me/+voe0LK-TSzA1NjUx")
+LINK_DIS  = os.getenv("LINK_DISCORD", "https://discord.gg/NRdjpBFy9E")
+
+LINK_GLOBAL_ETER = "https://eternalmangas.org/"
+LINK_GLOBAL_CATH = "https://catharsisworld.com/"
+LINK_GLOBAL_LEC  = "https://lectorjpg.com/"
+LINK_GLOBAL_COL  = "https://colorcitoscan.com/"
+
+# --- Helpers para Google Sheets ---
+def normalize_channel_name(ch: str) -> str:
+    """
+    Normaliza el canal que el usuario ingresa.
+    Acepta formatos:
+      - "#nombre"
+      - "nombre"
+      - "<#1234567890>" (mención)
+    Devuelve el nombre sin '#', en minusculas para comparar.
+    """
+    ch = ch.strip()
+    # mención: <#id>
+    m = re.match(r"<#(\d+)>", ch)
+    if m:
+        return m.group(1)  # devolvemos id en este caso, lo manejaremos separado
+    # si comienza con '#'
+    if ch.startswith("#"):
+        return ch[1:].strip().lower()
+    return ch.lower()
+
+def get_sheet_rows() -> List[List[str]]:
+    """
+    Trae filas desde la hoja VARIABLES.
+    Espera que la hoja tenga encabezado en fila 1 y datos desde fila 2 en adelante.
+    Retorna la matriz de filas (cada fila es lista de celdas como strings).
+    """
+    try:
+        range_name = f"{SHEET_NAME2}!A2:F"
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        values = result.get("values", [])
+        return values
+    except Exception as e:
+        # Este es un punto crítico para depurar si las credenciales no están ok
+        print(f"⚠️ Error leyendo Google Sheet: {e}")
+        return []
+
+def find_project_row_by_channel(channel_lookup: str) -> Optional[Dict[str, str]]:
+    """
+    Busca la fila cuyo valor en la columna B (index 1) coincida con channel_lookup.
+    channel_lookup debe estar normalizado (sin '#', minúsculas) o puede ser channel ID como string.
+    Retorna diccionario con claves: canal, titulo, sinopsis, generos, tipo
+    """
+    rows = get_sheet_rows()
+    lookup = channel_lookup.lower()
+    for row in rows:
+        # row puede tener longitud variable; aseguramos índices
+        col_b = row[1].strip().lower() if len(row) > 1 and row[1] else ""
+        if col_b == lookup:
+            return {
+                "CANAL": col_b,
+                "TITULO": row[2].strip() if len(row) > 2 else "",
+                "SINOPSIS": row[3].strip() if len(row) > 3 else "",
+                "GENEROS": row[4].strip() if len(row) > 4 else "",
+                "TIPO": row[5].strip() if len(row) > 5 else ""
+            }
+    # no encontrado
+    return None
+
+# --- Helpers para leer pinned messages del canal ---
+URL_REGEX = re.compile(r"https?://[^\s>]+")
+def extract_urls_from_text(text: str) -> List[str]:
+    return URL_REGEX.findall(text)
+
+async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[str]]:
+    """
+    Lee los mensajes fijados (pins) de un canal y busca links relacionados con:
+      - catharsis
+      - eternal/eternalmangas
+      - lectorjpg
+      - colorcitoscan
+    Devuelve dict con claves LINK_CATH, LINK_ETER, LINK_LEC, LINK_COL (valor string o None)
+    """
+    found = {
+        "LINK_CATH": None,
+        "LINK_ETER": None,
+        "LINK_LEC": None,
+        "LINK_COL": None
+    }
+    try:
+        pins = await channel.pins()
+    except Exception as e:
+        print(f"⚠️ No pude leer pins del canal {channel}: {e}")
+        return found
+
+    for msg in pins:
+        text = (msg.content or "") + "\n" + " ".join([att.url for att in msg.attachments]) if msg.attachments else (msg.content or "")
+        urls = extract_urls_from_text(text)
+
+        # si hay URLs, buscar por dominio
+        for u in urls:
+            lu = u.lower()
+            if "catharsis" in lu and not found["LINK_CATH"]:
+                found["LINK_CATH"] = u
+            if "eternalmangas" in lu and not found["LINK_ETER"]:
+                found["LINK_ETER"] = u
+            if "lectorjpg" in lu and not found["LINK_LEC"]:
+                found["LINK_LEC"] = u
+            if "colorcitoscan" in lu and not found["LINK_COL"]:
+                found["LINK_COL"] = u
+
+        # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
+        # Buscamos líneas con prefijos conocidos
+        lines = (msg.content or "").splitlines()
+        for ln in lines:
+            ln_stripped = ln.strip()
+            # formato "Eternal: slug" -> no es URL, pero puede indicar que existe una referencia
+            if ln_stripped.lower().startswith("eternal") and not found["LINK_ETER"]:
+                # si hay algo después de "Eternal:" lo guardamos como texto (no ideal, pero ayuda)
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1 and parts[1].strip():
+                    found["LINK_ETER"] = parts[1].strip()
+            if ln_stripped.lower().startswith("catharsis") and not found["LINK_CATH"]:
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1 and parts[1].strip():
+                    found["LINK_CATH"] = parts[1].strip()
+            if ln_stripped.lower().startswith("lector") and not found["LINK_LEC"]:
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1 and parts[1].strip():
+                    found["LINK_LEC"] = parts[1].strip()
+            if ln_stripped.lower().startswith("color") and not found["LINK_COL"]:
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1 and parts[1].strip():
+                    found["LINK_COL"] = parts[1].strip()
+
+    return found
+
+# Normalizar dominio Catharsis si hace falta
+def normalize_cath_link(url_or_text: str) -> str:
+    if not url_or_text:
+        return url_or_text
+    # si es URL y contiene .dig-it.info -> reemplazar por .vxviral.xyz (ejemplo)
+    corrected = url_or_text.replace(".dig-it.info", ".vxviral.xyz")
+    # más reglas de normalización pueden agregarse aquí
+    return corrected
+
+# --- Construcción del diccionario final de variables ---
+async def build_variables_for_channel(ctx: commands.Context, channel_input: str) -> Dict[str, Any]:
+    """
+    Dado el input del usuario para canal (por ejemplo "#por-tu-destino" o "<#id>"), construye
+    el diccionario con todas las variables: fijas + semifijas desde sheet + semifijas desde pins.
+    """
+    # 1) Normalizar input
+    norm = normalize_channel_name(channel_input)
+    # 2) Resolver canal: puede ser id o nombre
+    target_channel = None
+    if re.fullmatch(r"\d+", norm):
+        # es un id
+        ch_id = int(norm)
+        target_channel = bot.get_channel(ch_id)
+    else:
+        # buscar por nombre en los guilds que tenemos
+        for g in bot.guilds:
+            for ch in g.text_channels:
+                if ch.name.lower() == norm:
+                    target_channel = ch
+                    break
+            if target_channel:
+                break
+
+    if not target_channel:
+        raise ValueError("CANAL_NO_ENCONTRADO")
+
+    # 3) Leer sheet usando el nombre del canal tal como aparece en la hoja (col B)
+    # Intentamos con el nombre exacto (#name) y también con el nombre sin '#'
+    sheet_lookup = target_channel.name.lower()
+    sheet_row = find_project_row_by_channel(sheet_lookup)
+    if not sheet_row:
+        # intentar con "#name"
+        sheet_row = find_project_row_by_channel(f"#{sheet_lookup}")
+
+    # 4) Leer pins del canal
+    pin_vars = await read_channel_pins(target_channel)
+
+    # Normalizar cath link si existe
+    if pin_vars.get("LINK_CATH"):
+        pin_vars["LINK_CATH"] = normalize_cath_link(pin_vars["LINK_CATH"])
+
+    # 5) Merge final
+    final = {
+        # fijas
+        "LINK_TELE": LINK_TELE,
+        "LINK_DIS": LINK_DIS,
+        "LINK_GLOBAL_ETER": LINK_GLOBAL_ETER,
+        "LINK_GLOBAL_CATH": LINK_GLOBAL_CATH,
+        "LINK_GLOBAL_LEC": LINK_GLOBAL_LEC,
+        "LINK_GLOBAL_COL": LINK_GLOBAL_COL,
+        # semifijas desde sheet (pueden ser None)
+        "TITULO": sheet_row["TITULO"] if sheet_row else None,
+        "SINOPSIS": sheet_row["SINOPSIS"] if sheet_row else None,
+        "GENEROS": sheet_row["GENEROS"] if sheet_row else None,
+        "TIPO": sheet_row["TIPO"] if sheet_row else None,
+        # semifijas desde pins
+        "LINK_CATH": pin_vars.get("LINK_CATH"),
+        "LINK_ETER": pin_vars.get("LINK_ETER"),
+        "LINK_LEC": pin_vars.get("LINK_LEC"),
+        "LINK_COL": pin_vars.get("LINK_COL"),
+        # detalle del canal
+        "CHANNEL_OBJ": target_channel,
+        "CHANNEL_NAME": target_channel.name
+    }
+    return final
+
+# --- Render de plantilla_fb ---
+def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str) -> str:
+    """
+    Rellena la plantilla_fb usando las variables encontradas.
+    Si una URL no existe, simplemente NO se imprime su línea.
+    """
+
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
+
+    # Links dinámicos: solo agregarlos si existen
+    enlaces = []
+    if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
+    if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
+    if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
+    if safe("LINK_COL"): enlaces.append(f"✦ {safe('LINK_COL')}")
+
+    enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
+
+    titulo  = safe("TITULO")  or "[SIN_TITULO]"
+    sinop   = safe("SINOPSIS") or "[SIN_SINOPSIS]"
+    generos = safe("GENEROS") or "[SIN_GENEROS]"
+    tipo    = safe("TIPO")    or "[SIN_TIPO]"
+
+    texto = (
+f"🌹⋆｡°✩ ˚｡⋆ 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 ⋆｡°✩ ˚｡⋆🌹\n"
+f"༺📘༻ **{titulo}** ༺📘༻\n"
+f"┏━━━━━━༻❁༺━━━━━━┓\n"
+f"🖋 {caps_word} {cap_text}\n"
+f"┗━━━━━━༻❁༺━━━━━━┛\n"
+f"🌐 Lectura disponible en:\n"
+f"{enlaces_texto}\n"
+f"꧁─────────────✧─────────────꧂\n"
+f"🗝          Sinopsis\n"
+f"{sinop}\n"
+f"꧁─────────────✧─────────────꧂\n\n"
+f"🎀 Géneros: {generos}\n"
+f"📚 Formato: {tipo}\n"
+f"💬 Conéctate con nosotros en Telegram y Discord:\n"
+f"➤ {safe('LINK_TELE')}\n"
+f"➤ {safe('LINK_DIS')}\n"
+f"✦───༺♡༻───✦\n\n"
+f"#CapítuloNuevo #Manhwa #BreakScan"
+    )
+    return texto
+
+# --- Render de plantilla_dis ---
+def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: str) -> str:
+    """
+    Rellena la plantilla_fb usando las variables encontradas.
+    Si una URL no existe, simplemente NO se imprime su línea.
+    """
+
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
+
+    # Links dinámicos: solo agregarlos si existen
+    enlaces = []
+    if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
+    if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
+    if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
+    if safe("LINK_COL"): enlaces.append(f"✦ {safe('LINK_COL')}")
+
+    enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
+
+    titulo  = safe("TITULO")  or "[SIN_TITULO]"
+    texto_dis = (
+f"🌹 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 🌹\n"
+f"## ༺📘༻ **{titulo}** ༺📘༻\n\n"
+f"🖋 {caps_word} {cap_text}\n\n"
+f"🌐 Lectura disponible en:\n"
+f"{enlaces_texto}\n"
+f"# Muchas gracias por su apoyo 💖\n"
+    )
+    return texto_dis
+
+# --- Render de plantilla_tel ---
+def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, choice: str) -> str:
+    """
+    Rellena la plantilla para Telegram.
+    choice: '1' -> CAPÍTULO, '2' -> CAPÍTULOS (para decidir 'YA DISPONIBLE' o 'YA DISPONIBLES')
+    """
+    titulo = vars_dict.get("TITULO") or "[SIN_TITULO]"
+    enlaces = []
+    for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
+        v = vars_dict.get(k)
+        if v: enlaces.append(v)
+    enlaces_texto = "\n".join(enlaces) if enlaces else "[No hay enlaces]"
+
+    caps_word_text = caps_word
+    disponible_text = "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮" if choice == "1" else "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮𝓼"
+
+    texto = (
+f"✨ ¡Buenas buenas, gente hermosa! ✨\n"
+f"Acabamos de actualizar\n\n"
+f"💛 **{titulo}** 💛\n\n"
+f"📘 {caps_word_text} {cap_text} {disponible_text}\n\n"
+f"📍 LÉELO AQUÍ:\n"
+f"{enlaces_texto}\n\n"
+f"¡Gracias por su paciencia, por leer y por todos esos comentarios que nos motivan! 💫"
+    )
+    return texto
+
+# --- Render de plantilla_cath ---
+def render_plantilla_cath(vars_dict: Dict[str, Any], cap_text: str) -> str:
+    """
+    Rellena la plantilla_cath usando las variables encontradas.
+    Si falta alguna semifija, la reemplaza por un placeholder visible.
+    """
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return f"[NO_{k}]"
+        return v
+
+    texto_cath = (
+f"### 📢 <@&1339346858459402353> de: Break Scan\n"
+f"# 📚 {safe('TITULO')}\n"
+f"- 🔹 **Capítulo(s) actualizado:** {cap_text} 💖\n"
+f"- 🔸 **Ver en:** {safe('LINK_GLOBAL_CATH')}\n"
+f"## ¡Muchas gracias por el apoyo, disfrútenlo!"
+    )
+    return texto_cath
+
+# --- Render de plantilla_eter ---
+def render_plantilla_eter(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
+    """
+    Rellena la plantilla_eter.
+    Se usa solo si existe LINK_ETER en los fijados.
+    """
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return f"[NO_{k}]"
+        return v
+
+    texto_eter = (
+f"@everyone\n"
+f"**{caps_word_text} {cap_text}**\n"
+f"## 📖✨ **{safe('TITULO')}** ✨📖\n"
+f"🔗 Link: 👉 {safe('LINK_ETER')}\n\n"
+f"🎀━━━━━━━━━━━━━━━━━🎀"
+    )
+    return texto_eter
+
+def render_plantilla_lec(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
+    """
+    Rellena la plantilla_lec.
+    Se usa solo si existe LINK_LEC en los fijados.
+    """
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return f"[NO_{k}]"
+        return v
+
+    texto_lec = (
+f"@everyone\n"
+f"**{caps_word_text} {cap_text}**\n"
+f"## 📖✨ **{safe('TITULO')}** ✨📖\n"
+f"🔗 Link: 👉 {safe('LINK_LEC')}\n\n"
+f"🎀━━━━━━━━━━━━━━━━━🎀"
+    )
+    return texto_lec
+
+# --- Render de plantilla_col ---
+def render_plantilla_col(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
+    """
+    Rellena la plantilla_col.
+    Se usa solo si existe LINK_col en los fijados.
+    """
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return f"[NO_{k}]"
+        return v
+
+    texto_col = (
+f"@everyone\n"
+f"**{caps_word_text} {cap_text}**\n"
+f"## 📖✨ **{safe('TITULO')}** ✨📖\n"
+f"🔗 Link: 👉 {safe('LINK_COL')}\n\n"
+f"🎀━━━━━━━━━━━━━━━━━🎀"
+    )
+    return texto_col
 
 # Eventos de Discord
 @bot.event
@@ -1152,6 +1557,100 @@ async def gen(ctx):
     except Exception as e:
         await ctx.send(f"❌ Error durante !gen: {e}")
         print(f"❌ Error en comando !gen: {e}")
+
+# Comando !update
+@bot.command(name="update")
+@commands.has_guild_permissions(send_messages=True)
+async def update_cmd(ctx: commands.Context):
+    """
+    Flujo conversacional simple:
+     1) Pedir canal (#name o mención)
+     2) Preguntar si es CAPÍTULO o CAPÍTULOS
+     3) Pedir texto del capítulo o rango
+     4) Construir variables (sheet + pins)
+     5) Renderizar plantilla_fb (preview)
+    """
+    author = ctx.author
+    timeout = 120  # segundos para que responda en cada paso
+
+    try:
+        # 1) pedir canal
+        await ctx.send("Menciona el canal del que deseas plantilla de actualización con #")
+        msg1 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        channel_input = msg1.content.strip()
+
+        # 2) pedir singular/plural
+        await ctx.send("¿Responde `1` para **CAPÍTULO** o `2` para **CAPÍTULOS**.")
+        msg2 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        choice = msg2.content.strip()
+        if choice not in ("1", "2"):
+            await ctx.send("Entrada no válida. Se asumirá *CAPÍTULO* (singular).")
+            choice = "1"
+
+        if choice == "1":
+            palabra_caps = "𝓒𝓪𝓹𝓲𝓽𝓾𝓵𝓸"
+        else:
+            palabra_caps = "𝓒𝓪𝓹𝓲𝓽𝓾𝓵𝓸𝓼"
+
+        # 3) pedir el texto del capítulo/rango
+        await ctx.send("Escribe el número o texto del capítulo (ej: `23`, `10 al 15`, `Especial 1`, `12 y 13`):")
+        msg3 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        cap_text = msg3.content.strip()
+
+        # 4) construir variables
+        await ctx.send("🔎 Buscando datos en la hoja y pins del canal...")
+        try:
+            vars_dict = await build_variables_for_channel(ctx, channel_input)
+        except ValueError as e:
+            if str(e) == "CANAL_NO_ENCONTRADO":
+                await ctx.send("❌ No fue posible encontrar el canal indicado en los servidores del bot. Revisa que el canal exista y que esté en el mismo servidor.")
+                return
+            else:
+                await ctx.send(f"❌ Error inesperado localizando el canal: {e}")
+                return
+
+        # 5) render de plantillas
+        texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps)
+        texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps)
+        texto_tel = render_plantilla_tel(vars_dict, cap_text, palabra_caps, choice)
+        texto_cath = render_plantilla_cath(vars_dict, cap_text)
+        texto_eter = render_plantilla_eter(vars_dict, cap_text, palabra_caps)
+        texto_lec = render_plantilla_lec(vars_dict, cap_text, palabra_caps)
+        texto_col = render_plantilla_col(vars_dict, cap_text, palabra_caps)
+
+        # 6) reportar estado de variables clave para depuración
+        status_lines = []
+        status_lines.append(f"Canal detectado: `{vars_dict.get('CHANNEL_NAME')}`")
+        # sheet presence
+        if vars_dict.get("TITULO") and vars_dict.get("SINOPSIS"):
+            status_lines.append("✅ Datos encontrados en Google Sheets (TÍTULO y SINOPSIS).")
+        else:
+            status_lines.append("⚠ Datos incompletos en Google Sheets (TÍTULO/SINOPSIS faltantes).")
+
+        # pins presence
+        pins_info = []
+        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
+            pins_info.append(f"{k}: {vars_dict.get(k) if vars_dict.get(k) else '[NO]'}")
+        status_text = "\n".join(status_lines + ["Pins encontrados:"] + pins_info)
+
+        # 7) enviar preview y status
+        await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
+        await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
+        await ctx.send("👇 **Previsualización DISCORD**\n\n" + "```" + texto_dis + "```") #siempre
+        if vars_dict.get("LINK_CATH"):
+            await ctx.send("👇 **Previsualización CATHARSIS**\n\n" + "```" + texto_cath + "```") #esta sólo es cuando existe un link de catharsis
+        if vars_dict.get("LINK_ETER"):
+            await ctx.send("👇 **Previsualización ETERNAL**\n\n" + "```" + texto_eter + "```") #esta sólo es cuando existe un link de eternal
+        if vars_dict.get("LINK_LEC"):
+            await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
+        if vars_dict.get("LINK_COL"):
+            await ctx.send("👇 **Previsualización COLORCITOS**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de colorcitos
+        
+    except asyncio.TimeoutError:
+        await ctx.send(f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`.")
+    except Exception as e:
+        print("Error en comando !update:", e)
+        await ctx.send(f"❌ Ocurrió un error inesperado: {e}")
 
 # Ejecutar bot
 bot.run(TOKEN)
