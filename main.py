@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse, urlunparse
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -27,7 +28,7 @@ SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 
 # — Crear credenciales de servicio
-SERVICE_ACCOUNT_FILE = "service_account.json"  # asegúrate que este archivo esté en tu Replit
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
 creds = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE,
@@ -113,7 +114,7 @@ def join_ranges(numbers):
             start = prev = n
     ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
     return " / ".join(ranges)
-
+    
 # Funciones de Saku_RAW 
 def evento_a(soup):
     contenedores = soup.select('astro-slot > div[data-hk]')
@@ -213,6 +214,25 @@ MESES = {
     "septiembre": "September", "octubre": "October", "noviembre": "November",
     "diciembre": "December"
 }
+
+# Lista de dominios Catharsis válidos (fácil de actualizar)
+CATH_DOMAINS = [
+    "catharsisworld.dig-it.info",
+    "catharsisworld.vxviral.xyz"
+]
+
+def url_with_domain(url: str, new_domain: str) -> str:
+    """Reemplaza el dominio de un URL manteniendo esquema y path."""
+    p = urlparse(url)
+    return urlunparse((p.scheme, new_domain, p.path, "", "", ""))
+
+def check_alive(url: str, timeout=10):
+    """Revisa si un URL responde correctamente sin romper el flujo."""
+    try:
+        r = requests.get(url, timeout=timeout)
+        return r.status_code == 200
+    except:
+        return False
 
 def evento_eter(url, preestreno=False, retries=3, delay=5):
     headers = {
@@ -329,12 +349,24 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
     return "❌ No se pudo acceder a LectorJPG después de varios intentos."
 
 def evento_cath(url, preestreno=False, retries=3, delay=5):
+    # ---------- 1) Intento: usar el link tal como viene ----------
+    if not check_alive(url):
 
-# --- Reparación automática solo si el dominio es el viejo ---
-    if "catharsisworld.dig-it.info" in url:
-        url = url.replace("catharsisworld.dig-it.info", "catharsisworld.vxviral.xyz")
+        # ---------- 2) Intento: probar todos los dominios conocidos ----------
+        dominio_actual = urlparse(url).netloc
 
-# Extraer dominio final del URL ya corregido
+        for dom in CATH_DOMAINS:
+            if dom == dominio_actual:
+                continue  # ya lo probamos
+            alt_url = url_with_domain(url, dom)
+            if check_alive(alt_url):
+                url = alt_url
+                break
+        else:
+            print("❌ Ningún dominio Catharsis respondió.")
+            return "❌ Catharsis parece estar caído en todos los dominios."
+
+# 3 Extraer dominio final del URL ya corregido
     try:
         dominio = url.split("/")[2]  # ejemplo: catharsisworld.vxviral.xyz
     except:
@@ -625,7 +657,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
     try:
         pins = await channel.pins()
     except Exception as e:
-        print(f"⚠️ No pude leer pins del canal {channel}: {e}")
+#        print(f"⚠️ No pude leer pins del canal {channel}: {e}")
         return found
 
     for msg in pins:
@@ -670,6 +702,40 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
 
     return found
 
+async def resolve_cath_domain(original_url: str) -> str:
+    """
+    Recibe un URL tomado del pin (LINK_CATH) y determina cuál dominio Catharsis funciona.
+    - Primero prueba tal cual está.
+    - Si no funciona, intenta reemplazar el dominio por todos los dominios de CATH_DOMAINS.
+    - Si encuentra uno que responde 200, lo regresa.
+    - Si ninguno funciona, devuelve el original.
+    """
+    if not original_url:
+        return None
+
+    # 1 — Probar el link tal cual está
+    if check_alive(original_url):
+        return original_url
+
+    # 2 — Intentar con todos los dominios conocidos
+    try:
+        parsed = urlparse(original_url)
+        original_domain = parsed.netloc.lower()
+    except:
+        return original_url  # si el URL no es válido, devolverlo tal cual
+
+    for dom in CATH_DOMAINS:
+        # evitar probar el mismo
+        if dom == original_domain:
+            continue
+
+        test_url = url_with_domain(original_url, dom)
+        if check_alive(test_url):
+            return test_url
+
+    # 3 — Si ninguno funcionó, devolver tal cual
+    return original_url
+
 # Normalizar dominio Catharsis si hace falta
 def normalize_cath_link(url_or_text: str) -> str:
     if not url_or_text:
@@ -707,7 +773,6 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
         raise ValueError("CANAL_NO_ENCONTRADO")
 
     # 3) Leer sheet usando el nombre del canal tal como aparece en la hoja (col B)
-    # Intentamos con el nombre exacto (#name) y también con el nombre sin '#'
     sheet_lookup = target_channel.name.lower()
     sheet_row = find_project_row_by_channel(sheet_lookup)
     if not sheet_row:
@@ -1084,8 +1149,8 @@ async def raw(ctx):
             color=0xF8C8DC
         )
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
-        await ctx.send(embed=embed)  
-
+        await ctx.send(embed=embed)
+        
 # Comando !sitio
 @bot.command()
 async def sitio(ctx):
@@ -1238,8 +1303,8 @@ def escribir_a_hoja(canal, categoria, resultados):
 
     except Exception as e:
         print(f"❌ Error al escribir en la hoja: {e}")
-
-# Comando !larry
+        
+# Comando !table
 @bot.command()
 async def table(ctx):
     if ctx.guild.id not in GUILD_IDS:
@@ -1492,6 +1557,7 @@ async def acceso(ctx, user: discord.Member = None):
         await ctx.send(embed=embed)
         print(f"[ERROR acceso general] {e}")
 
+# Comando !gen
 @bot.command()
 async def gen(ctx):
     if ctx.guild.id not in GUILD_IDS:
@@ -1609,6 +1675,11 @@ async def update_cmd(ctx: commands.Context):
                 await ctx.send(f"❌ Error inesperado localizando el canal: {e}")
                 return
 
+        # 4.1 — Resolver link Catharsis con dominios alternativos si el fijado falla
+        if vars_dict.get("LINK_CATH"):
+            resolved_cath = await resolve_cath_domain(vars_dict["LINK_CATH"])
+            vars_dict["LINK_CATH"] = resolved_cath
+
         # 5) render de plantillas
         texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps)
         texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps)
@@ -1631,8 +1702,16 @@ async def update_cmd(ctx: commands.Context):
         pins_info = []
         for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
             pins_info.append(f"{k}: {vars_dict.get(k) if vars_dict.get(k) else '[NO]'}")
+            
         status_text = "\n".join(status_lines + ["Pins encontrados:"] + pins_info)
 
+        canal_real = vars_dict.get("CHANNEL")  # este es el canal real ya encontrado
+        pins = await read_channel_pins(canal_real)
+        LINK_CATH = pins.get("LINK_CATH")
+
+        if LINK_CATH:
+            LINK_CATH = await resolve_cath_domain(LINK_CATH)
+        
         # 7) enviar preview y status
         await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
         await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
@@ -1645,7 +1724,7 @@ async def update_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
         if vars_dict.get("LINK_COL"):
             await ctx.send("👇 **Previsualización COLORCITOS**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de colorcitos
-        
+
     except asyncio.TimeoutError:
         await ctx.send(f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`.")
     except Exception as e:
