@@ -1715,7 +1715,7 @@ async def update_cmd(ctx: commands.Context):
         # 7) enviar preview y status
         await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
         await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
-        await ctx.send("👇 **Previsualización DISCORD**\n\n" + "```" + texto_dis + "```") #siempre
+#        await ctx.send("👇 **Previsualización DISCORD**\n\n" + "```" + texto_dis + "```") #siempre
         if vars_dict.get("LINK_CATH"):
             await ctx.send("👇 **Previsualización CATHARSIS**\n\n" + "```" + texto_cath + "```") #esta sólo es cuando existe un link de catharsis
         if vars_dict.get("LINK_ETER"):
