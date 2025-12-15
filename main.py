@@ -2404,12 +2404,13 @@ async def type(ctx):
     for i in range(1, len(rows)):
         row = rows[i] + [""] * 24
 
+        raw = row[3]           # D
         trad_status = row[4]   # E
         clean_status = row[5]  # F
         type_status = row[6]   # G
         prioridad = row[17] if len(row) > 17 else "0"  # R
 
-        if trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
+        if raw == "1" and trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
             if prioridad == "1" and fila_prioritaria is None:
                 fila_prioritaria = i
             elif prioridad != "1" and fila_normal is None:
