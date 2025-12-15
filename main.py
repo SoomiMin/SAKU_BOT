@@ -193,7 +193,7 @@ async def revisar_trad_atrasados():
             if guild:
                 await enviar_recordatorio(guild, proyecto, asign_channel_id, mention, capitulo, msg_id)
 
-@tasks.loop(minutes=30)
+@tasks.loop(minutes=40)
 async def revisar_clean_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
@@ -247,7 +247,7 @@ async def revisar_clean_atrasados():
                 emoji="🔵"
             )
 
-@tasks.loop(minutes=30)  # luego lo subimos a 30
+@tasks.loop(minutes=55)  # luego lo subimos a 30
 async def revisar_type_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
