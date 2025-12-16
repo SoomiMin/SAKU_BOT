@@ -179,7 +179,7 @@ async def revisar_trad_atrasados():
             continue
 
         horas = (now - asignado_time).total_seconds() / 3600
-        if horas >= 3:
+        if horas >= 2:
             guild = bot.get_guild(GUILD_IDS[1])
 
             mention = user_cell
@@ -222,7 +222,7 @@ async def revisar_clean_atrasados():
         except:
             continue
 
-        minutos = (now - asignado_time).total_seconds() / 60
+        minutos = (now - asignado_time).total_seconds() / 3600
         if minutos >= 2:
             guild = bot.get_guild(GUILD_IDS[1])
             if not guild:
@@ -276,7 +276,7 @@ async def revisar_type_atrasados():
         except:
             continue
 
-        minutos = (now - asignado_time).total_seconds() / 60
+        minutos = (now - asignado_time).total_seconds() / 3600
         if minutos >= 2:
             guild = bot.get_guild(GUILD_IDS[1])
             if not guild:
