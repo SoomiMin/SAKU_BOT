@@ -74,23 +74,37 @@ async def on_reaction_add(reaction, user):
     if emoji == "🟡" and msg_id in trad_assignments:
         fila = trad_assignments[msg_id]
 
-    # --- 2. Si no está en memoria, buscar en hoja ---
-    if fila is None:
-        data = sheet.values().get(
+    # --- 2. Buscar fila en la hoja (forma segura) ---
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{hoja}!A:X"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    col_map = {
+        "🟡": "O",  # TRAD
+        "🔵": "P",  # CLEAN
+        "🟣": "Q"   # TYPE
+    }
+
+    col_letter = col_map.get(emoji)
+
+    for i in range(1, len(rows)):
+        fila_real = i + 1
+        rango = f"{hoja}!{col_letter}{fila_real}"
+
+        cell = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{hoja}!A:X"
-        ).execute()
+            range=rango
+        ).execute().get("values", [])
 
-        rows = data.get("values", [])
+        if cell and cell[0][0] == msg_id:
+            fila = fila_real
+            break
 
-        for i in range(1, len(rows)):
-            row = rows[i] + [""] * 24
-            if row[col_id] == msg_id:
-                fila = i + 1
-                break
-
-        if fila is None:
-            return  # No es un mensaje asignable
+    if fila is None:
+        return
 
     # --- 3. Actualizar columna correspondiente a COMPLETADO ---
     sheet.values().update(
