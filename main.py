@@ -13,6 +13,7 @@ from google.oauth2.credentials import Credentials
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urlunparse
 from discord.ext import commands, tasks
+from googleapiclient.errors import HttpError
 
 # 💖 Editado por Rami
 load_dotenv()
