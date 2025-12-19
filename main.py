@@ -78,7 +78,7 @@ async def on_reaction_add(reaction, user):
     if fila is None:
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{hoja}!A:Q"
+            range=f"{hoja}!A:X"
         ).execute()
 
         rows = data.get("values", [])
@@ -116,11 +116,11 @@ async def on_reaction_add(reaction, user):
             # Obtener capitulo desde la hoja
             data = sheet.values().get(
                 spreadsheetId=SPREADSHEET_ID,
-                range=f"{hoja}!A:Q"
+                range=f"{hoja}!A:X"
             ).execute()
             rows = data.get("values", [])
             fila_idx = fila - 1  # porque fila está en 1-index
-            row = rows[fila_idx] + [""] * 17
+            row = rows[fila_idx] + [""] * 24
             capitulo = row[2]
 
             nuevo_contenido = (
