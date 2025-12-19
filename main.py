@@ -247,7 +247,7 @@ async def revisar_clean_atrasados():
                 emoji="🔵"
             )
 
-@tasks.loop(minutes=55)  # luego lo subimos a 30
+@tasks.loop(minutes=15)  # luego lo subimos a 30
 async def revisar_type_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
