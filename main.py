@@ -84,7 +84,7 @@ async def on_reaction_add(reaction, user):
         rows = data.get("values", [])
 
         for i in range(1, len(rows)):
-            row = rows[i] + [""] * 17
+            row = rows[i] + [""] * 24
             if row[col_id] == msg_id:
                 fila = i + 1
                 break
