@@ -46,125 +46,161 @@ sheet_service = build("sheets", "v4", credentials=creds)
 sheet = sheet_service.spreadsheets()
 
 # Funciones de Saku_Asigna 
-trad_assignments = {}
+# Memoria temporal para todos los procesos
+assignments: Dict[int, Dict[str, Any]] = {}
+# Estructura:
+# assignments[message_id] = {
+#     "fila": fila_index,
+#     "proceso": "TRAD" | "CLEAN" | "TYPE",
+#     "hoja": SHEET_NAME3
+# }
+# 🔒 Locks y cooldowns
+assign_lock = asyncio.Lock()
+reaction_lock = asyncio.Lock()
+REACTION_COOLDOWN = 2  # segundos
+ASSIGN_COOLDOWN = 30  #lo bajé a 30s para que no se vea tan ofensivo
+last_assign_time = 0
 
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
         return
-
-    emoji = str(reaction.emoji)
-    msg_id = str(reaction.message.id)
-    hoja = SHEET_NAME3
-
-    # Determinar tipo por emoji
-    if emoji == "🟡":  # TRAD
-        col_status = "E"   # Columna E = TRAD
-        col_id = 14        # Columna O = IDMTRAD
-    elif emoji == "🔵":  # CLEAN
-        col_status = "F"   # Columna F = CLEAN
-        col_id = 15        # Columna P = IDMCLEAN
-    elif emoji == "🟣":  # TYPE
-        col_status = "G"   # Columna G = TYPE
-        col_id = 16        # Columna Q = IDMTYPE
-    else:
-        return  # No nos interesa otro emoji
-
-    # --- 1. Buscar en memoria temporal ---
-    fila = None
-    if emoji == "🟡" and msg_id in trad_assignments:
-        fila = trad_assignments[msg_id]
-
-    # --- 2. Buscar fila en la hoja (forma segura) ---
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!A:X"
-    ).execute()
-
-    rows = data.get("values", [])
-
-    col_map = {
-        "🟡": "O",  # TRAD
-        "🔵": "P",  # CLEAN
-        "🟣": "Q"   # TYPE
-    }
-
-    col_letter = col_map.get(emoji)
-
-    for i in range(1, len(rows)):
-        fila_real = i + 1
-        rango = f"{hoja}!{col_letter}{fila_real}"
-
-        cell = sheet.values().get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=rango
-        ).execute().get("values", [])
-
-        if cell and cell[0][0] == msg_id:
-            fila = fila_real
-            break
-
-    if fila is None:
-        return
-
-    # --- 3. Actualizar columna correspondiente a COMPLETADO ---
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!{col_status}{fila}",
-        valueInputOption="RAW",
-        body={"values": [["COMPLETADO"]]}
-    ).execute()
-
-    # --- 4. Borrar ID del mensaje de la hoja ---
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!{chr(64+col_id+1)}{fila}",  # Convertir índice a letra columna
-        valueInputOption="RAW",
-        body={"values": [[""]]}
-    ).execute()
-
-    # --- 5. Editar mensaje original ---
+    locked = False
     try:
-        original = reaction.message
-        contenido = original.content.split("\n")[0]  # primera línea
-        if emoji == "🟣":  # TYPE
-            # Obtener capitulo desde la hoja
-            data = sheet.values().get(
+        locked = reaction_lock.locked()
+        await reaction_lock.acquire()
+        try:
+            emoji_map = {
+                "🟡": ("TRAD", 4, 14),   # E, O
+                "🔵": ("CLEAN", 5, 15), # F, P
+                "🟣": ("TYPE", 6, 16),  # G, Q
+            }
+            emoji = str(reaction.emoji)
+            if emoji not in emoji_map:
+                return
+            proceso, col_status, col_id = emoji_map[emoji]
+            msg_id = reaction.message.id
+            print(f"[REACTION] {proceso} msg {msg_id} por {user.id}")
+            # --- Buscar en memoria ---
+            ##asumo que aqui seria poner si no esta en la memoria, que busque en la hoja de google sheets
+            mem = assignments.get(msg_id)
+            now_ts = datetime.utcnow().timestamp()
+            if mem:
+                # revisar expiración
+                if now_ts - mem["timestamp"] > 300:  # 300s = 5 min
+                    assignments.pop(msg_id, None)
+                    mem = None  # forzar fallback
+
+                if not mem:
+                    mem = buscar_en_sheets_por_message_id(msg_id, proceso)
+                    if not mem:
+                        return  # no es válido, ignorar
+                    # si lo traemos de sheets, lo guardamos en memoria
+                    mem["timestamp"] = now_ts
+                    assignments[msg_id] = mem
+                # Seguridad extra: validar proceso
+                if mem["proceso"] != proceso:
+                    return
+                fila = mem["fila"]
+                hoja = mem["hoja"]
+            status_index, id_index = col_status, col_id
+            # actualizar estado
+            sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
-                range=f"{hoja}!A:X"
+                range=f"{hoja}!{chr(65+status_index)}{fila}",
+                valueInputOption="RAW",
+                body={"values": [["COMPLETADO"]]}
             ).execute()
-            rows = data.get("values", [])
-            fila_idx = fila - 1  # porque fila está en 1-index
-            row = rows[fila_idx] + [""] * 24
-            capitulo = row[2]
 
-            nuevo_contenido = (
-                f"{contenido}\n"
-                f"Capítulo completado, actualizado en tabla.\n"
-                f"<@&1357527939226533920>, el capítulo {capitulo} está listo para subir.\n\n"
-            )
-        else:
-            nuevo_contenido = (
-                f"{contenido}\n"
-                f"Capítulo completado, actualizado en tabla.\n\n"
-            )
-        await original.edit(content=nuevo_contenido)
-    except:
-        if emoji == "🟣":
-            await reaction.message.channel.send(
-                f"✨ <@{user.id}> completó TYPE.\n"
-                f"<@&1357527939226533920>, el capítulo está listo para subir. 💖"
-            )
-        else:
-            await reaction.message.channel.send(
-#                f"✨ <@{user.id}> completó el capítulo asignado. 💖"
-            )
+            # borrar ID del mensaje
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!{chr(65+id_index)}{fila}",
+                valueInputOption="RAW",
+                body={"values": [[""]]}
+            ).execute()
+            # Editar mensaje original
+            try:
+                contenido = reaction.message.content.split("\n")[0]
+                if proceso == "TYPE":
+                    column_map = {
+                        "TRAD": ("E", "O", "C"),
+                        "CLEAN": ("F", "P", "C"),
+                        "TYPE": ("G", "Q", "C"),
+                    }
+                    status_col, id_col, cap_col = column_map[proceso]
+                    data = sheet.values().get(range=f"{hoja}!{id_col}:{cap_col}").execute()
+                    rows = data.get("values", [])
+                    fila_idx = fila - 1
+                    row = rows[fila_idx] + [""] * 24
+                    capitulo = row[2]
+                    nuevo_contenido = (
+                        f"{contenido}\n"
+                        f"Capítulo completado, actualizado en tabla.\n"
+                        f"<@&1357527939226533920>, el capítulo {capitulo} está listo para subir.\n\n"
+                    )
+                else:
+                    nuevo_contenido = f"{contenido}\nCapítulo completado, actualizado en tabla.\n\n"
 
-    # --- 6. Eliminar de memoria temporal ---
-    if emoji == "🟡" and msg_id in trad_assignments:
-        del trad_assignments[msg_id]
+                await reaction.message.edit(content=nuevo_contenido)
+            except:
+                await reaction.message.channel.send(
+                    f"✨ <@{user.id}> completó TYPE.\n"
+                    f"<@&1357527939226533920>, el capítulo está listo para subir. 💖"
+                )
+            # --- Eliminar de memoria ---
+            assignments.pop(msg_id, None)
+            print(f"[MEMORY] Eliminado msg {msg_id}")
+        except Exception as e:
+            print("[REACTION ERROR]")
+            traceback.print_exc()
+    finally:
+            await asyncio.sleep(REACTION_COOLDOWN)
+            reaction_lock.release()
 
-@tasks.loop(minutes=30) 
+def buscar_en_sheets_por_message_id(msg_id: int, proceso: str): 
+    try:
+        emoji_map = {
+            "TRAD": (4, 14),
+            "CLEAN": (5, 15),
+            "TYPE": (6, 16),
+        }
+        if proceso not in emoji_map:
+            return None
+        _, id_index = emoji_map[proceso]
+
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!A:X"
+        ).execute()
+        rows = data.get("values", [])
+        for idx, row in enumerate(rows, start=1):
+            row += [""] * 30
+            if str(row[id_index]).strip() == str(msg_id):
+                return {
+                    "fila": idx,
+                    "proceso": proceso,
+                    "hoja": SHEET_NAME3
+                }
+    except Exception as e:
+        print(f"[FALLBACK ERROR] {e}")
+        traceback.print_exc()
+        return None
+    
+async def check_assign_cooldown(ctx) -> bool:
+    global last_assign_time
+    now = time.time()
+    remaining = ASSIGN_COOLDOWN - (now - last_assign_time)
+
+    if remaining > 0:
+        await ctx.send(
+            f"⏳ El asignador está procesando otra solicitud.\n"
+            f"Por favor intenta de nuevo en **{int(remaining)} segundos** 💖"
+        )
+        return False
+    return True
+
+@tasks.loop(minutes=20) 
 async def revisar_trad_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
@@ -208,7 +244,7 @@ async def revisar_trad_atrasados():
             if guild:
                 await enviar_recordatorio(guild, proyecto, asign_channel_id, mention, capitulo, msg_id)
 
-@tasks.loop(minutes=40)
+@tasks.loop(minutes=30)
 async def revisar_clean_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
@@ -237,8 +273,8 @@ async def revisar_clean_atrasados():
         except:
             continue
 
-        minutos = (now - asignado_time).total_seconds() / 3600
-        if minutos >= 2:
+        horas = (now - asignado_time).total_seconds() / 3600
+        if horas >= 2:
             guild = bot.get_guild(GUILD_IDS[1])
             if not guild:
                 continue
@@ -262,7 +298,7 @@ async def revisar_clean_atrasados():
                 emoji="🔵"
             )
 
-@tasks.loop(minutes=50)
+@tasks.loop(minutes=40)
 async def revisar_type_atrasados():
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
@@ -291,8 +327,8 @@ async def revisar_type_atrasados():
         except:
             continue
 
-        minutos = (now - asignado_time).total_seconds() / 3600
-        if minutos >= 2:
+        horas = (now - asignado_time).total_seconds() / 3600
+        if horas >= 2:
             guild = bot.get_guild(GUILD_IDS[1])
             if not guild:
                 continue
@@ -315,7 +351,6 @@ async def revisar_type_atrasados():
                 proceso="TYPE",
                 emoji="🟣"
             )
-
 
 # Funciones de Saku_Drive 
 def authenticate():
@@ -2197,301 +2232,317 @@ async def upraw(ctx):
 # Comando !trad 
 @bot.command()
 async def trad(ctx):
-    await ctx.send(
-        "🌐 *¿Qué idioma vas a trabajar?*\n"
-        "`1` Coreano (KR)\n"
-        "`2` Inglés (ING)\n"
-        "`3` Bahasa Indonesia (INDO)\n"
-        "`4` Chino (CHIN)\n\n"
-        "Escribe solo el número."
-    )
+    global last_assign_time
+    if not await check_assign_cooldown(ctx):
+        return
+    async with assign_lock:
+        last_assign_time = time.time()
 
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
+        print(f"[ASSIGN] TRAD solicitado por {ctx.author.id}")
+        await ctx.send(
+            "🌐 *¿Qué idioma vas a trabajar?*\n"
+            "`1` Coreano (KR)\n"
+            "`2` Inglés (ING)\n"
+            "`3` Bahasa Indonesia (INDO)\n"
+            "`4` Chino (CHIN)\n\n"
+            "Escribe solo el número."
+        )
 
-    try:
-        msg = await bot.wait_for("message", check=check, timeout=120)
-        idioma = int(msg.content.strip())
-        if idioma not in [1,2,3,4]:
-            raise ValueError
-    except:
-        return await ctx.send("❌ Número inválido, amor.")
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
 
-    # KR→H(8), ING→I(9), INDO→J(10), CHIN→K(11)
-    idioma_index = idioma + 7
-    hoja = SHEET_NAME3
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=120)
+            idioma = int(msg.content.strip())
+            if idioma not in [1,2,3,4]:
+                raise ValueError
+        except:
+            return await ctx.send("❌ Número inválido, amor.")
 
-    # Leer hoja
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!A:X"
-    ).execute()
+        # KR→H(8), ING→I(9), INDO→J(10), CHIN→K(11)
+        idioma_index = idioma + 7
+        hoja = SHEET_NAME3
+        # Leer hoja
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:X"
+        ).execute()
+        rows = data.get("values", [])
+        # Asegurarse de que todas las filas tengan al menos 24 columnas
+        for i in range(len(rows)):
+            rows[i] += [""] * (24 - len(rows[i]))
 
-    rows = data.get("values", [])
+        # Buscar fila
+        fila_prioritaria = None
+        fila_normal = None
+        for i in range(1, len(rows)):
+            row = rows[i]
+            raw = str(row[3]).strip()
+            trad_status = str(row[4]).strip()
+            idioma_flag = str(row[idioma_index - 1]).strip()
+            prioridad = str(row[17]).strip() if len(row) > 17 else "0"  # Col R
 
-    # Buscar fila
-    fila_prioritaria = None
-    fila_normal = None
+            if raw == "1" and trad_status == "" and idioma_flag == "1":
+                if prioridad == "1" and fila_prioritaria is None:
+                    fila_prioritaria = i
+                elif prioridad != "1" and fila_normal is None:
+                    fila_normal = i
 
-    for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
+        fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
 
-        raw = row[3]
-        trad_status = row[4]
-        idioma_flag = row[idioma_index - 1]
-        prioridad = row[17] if len(row) > 17 else "0"  # Col R
+        if fila_index is None:
+            return await ctx.send("❌ No hay capítulos disponibles en ese idioma, mi cielito.")
 
-        if raw == "1" and trad_status == "" and idioma_flag == "1":
-            if prioridad == "1" and fila_prioritaria is None:
-                fila_prioritaria = i
-            elif prioridad != "1" and fila_normal is None:
-                fila_normal = i
+        proyecto = rows[fila_index][1]
+        capitulo = rows[fila_index][2]
 
-    fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
-    if fila_index is None:
-        return await ctx.send("❌ No hay capítulos disponibles en ese idioma, mi cielito.")
-
-    proyecto = rows[fila_index][1]
-    capitulo = rows[fila_index][2]
-
-    # Mención del canal
-    if proyecto.startswith("#"):
-        nombre_canal = proyecto[1:]
-        canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
-        if canal_discord:
-            proyecto = canal_discord.mention
-
-    # Enviar la asignación
-    asignacion_msg = await ctx.send(
-        f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
-        f"Cuando termines, reacciona con 🟡 para marcarlo como completado.\n\n"
-    )
-    await asignacion_msg.add_reaction("🟡")
-
-    # Marcar como ASIGNADO
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!E{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [["ASIGNADO"]]}
-    ).execute()
-
-    timestamp = datetime.utcnow().isoformat()
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!S{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[timestamp]]}
-    ).execute()
-
-    # Guardar usuario solicitante
-    usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!L{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[usuario_guardado]]}
-    ).execute()
-
-    # Guardar ID DEL MENSAJE en columna O
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!O{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(asignacion_msg.id)]]}
-    ).execute()
-
-    # Guardar el canal
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!V{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(ctx.channel.id)]]}
-    ).execute()
-
-    # Guardar en memoria temporal
-    trad_assignments[asignacion_msg.id] = fila_index + 1
-
+        # Mención del canal si empieza con #
+        if proyecto.startswith("#"):
+            nombre_canal = proyecto[1:]
+            canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
+            if canal_discord:
+                proyecto = canal_discord.mention
+        # Enviar la asignación
+        asignacion_msg = await ctx.send(
+            f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
+            f"Cuando termines, reacciona con 🟡 para marcarlo como completado.\n\n"
+        )
+        await asyncio.sleep(0.1)
+        await asignacion_msg.add_reaction("🟡")
+        # Marcar como ASIGNADO
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!E{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [["ASIGNADO"]]}
+        ).execute()
+        timestamp = datetime.utcnow().isoformat()
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!S{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[timestamp]]}
+        ).execute()
+        # Guardar usuario solicitante
+        usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!L{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[usuario_guardado]]}
+        ).execute()
+        # Guardar ID del mensaje en columna O
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!O{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(asignacion_msg.id)]]}
+        ).execute()
+        # Guardar el canal
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!V{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(ctx.channel.id)]]}
+        ).execute()
+        # Guardar en memoria temporal
+        assignments[asignacion_msg.id] = {
+            "fila": fila_index + 1,
+            "proceso": "TRAD",
+            "hoja": SHEET_NAME3,
+            "timestamp": datetime.utcnow().timestamp()
+        }
 
 # Comando !clean
 @bot.command()
 async def clean(ctx):
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!A:X"
-    ).execute()
-    rows = data.get("values", [])
+    global last_assign_time
 
-    fila_prioritaria = None
-    fila_normal = None
+    if not await check_assign_cooldown(ctx):
+        return
 
-    for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
+    async with assign_lock:
+        last_assign_time = time.time()
+        print(f"[ASSIGN] CLEAN solicitado por {ctx.author.id}")
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!A:X"
+        ).execute()
+        rows = data.get("values", [])
 
-        raw = row[3]          # D
-        clean_status = row[5] # F
-        prioridad = row[17] if len(row) > 17 else "0"  # R
+        fila_prioritaria = None
+        fila_normal = None
 
-        if raw == "1" and clean_status == "":
-            if prioridad == "1" and fila_prioritaria is None:
-                fila_prioritaria = i
-            elif prioridad != "1" and fila_normal is None:
-                fila_normal = i
+        for i in range(1, len(rows)):
+            row = rows[i] + [""] * 24
 
-    fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
-    if fila_index is None:
-        return await ctx.send("❌ No hay capítulos disponibles para CLEAN, mi cielito.")
+            raw = row[3]          # D
+            clean_status = row[5] # F
+            prioridad = row[17] if len(row) > 17 else "0"  # R
 
-    proyecto = rows[fila_index][1]
-    capitulo = rows[fila_index][2]
+            if raw == "1" and clean_status == "":
+                if prioridad == "1" and fila_prioritaria is None:
+                    fila_prioritaria = i
+                elif prioridad != "1" and fila_normal is None:
+                    fila_normal = i
 
-    # Mención del canal si aplica
-    if proyecto.startswith("#"):
-        nombre_canal = proyecto[1:]
-        canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
-        if canal_discord:
-            proyecto = canal_discord.mention
-
-    # Enviar mensaje de asignación
-    asignacion_msg = await ctx.send(
-        f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
-        f"Cuando termines, reacciona con 🔵 para marcarlo como completado.\n\n"
-    )
-    await asignacion_msg.add_reaction("🔵")
-
-    # Marcar como ASIGNADO (F)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!F{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [["ASIGNADO"]]}
-    ).execute()
-
-    # Timestamp (T)
-    timestamp = datetime.utcnow().isoformat()
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!T{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[timestamp]]}
-    ).execute()
-
-    # Usuario (M)
-    usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!M{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[usuario_guardado]]}
-    ).execute()
-
-    # ID del mensaje (P)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!P{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(asignacion_msg.id)]]}
-    ).execute()
-
-    # Canal de asignación (W)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!W{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(ctx.channel.id)]]}
-    ).execute()
-
+        fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
+        if fila_index is None:
+            return await ctx.send("❌ No hay capítulos disponibles para CLEAN, mi cielito.")
+        proyecto = rows[fila_index][1]
+        capitulo = rows[fila_index][2]
+        # Mención del canal si aplica
+        if proyecto.startswith("#"):
+            nombre_canal = proyecto[1:]
+            canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
+            if canal_discord:
+                proyecto = canal_discord.mention
+        # Enviar mensaje de asignación
+        asignacion_msg = await ctx.send(
+            f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
+            f"Cuando termines, reacciona con 🔵 para marcarlo como completado.\n\n"
+        )
+        await asyncio.sleep(0.1)
+        await asignacion_msg.add_reaction("🔵")
+        # Marcar como ASIGNADO (F)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!F{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [["ASIGNADO"]]}
+        ).execute()
+        # Timestamp (T)
+        timestamp = datetime.utcnow().isoformat()
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!T{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[timestamp]]}
+        ).execute()
+        # Usuario (M)
+        usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!M{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[usuario_guardado]]}
+        ).execute()
+        # ID del mensaje (P)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!P{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(asignacion_msg.id)]]}
+        ).execute()
+        # Canal de asignación (W)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!W{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(ctx.channel.id)]]}
+        ).execute()
+        # Guardar en memoria temporal
+        assignments[asignacion_msg.id] = {
+            "fila": fila_index + 1,
+            "proceso": "CLEAN",
+            "hoja": SHEET_NAME3,
+            "timestamp": datetime.utcnow().timestamp()
+        }
 
 # Comando !type
 @bot.command()
 async def type(ctx):
-    hoja = SHEET_NAME3
+    global last_assign_time
 
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!A:X"
-    ).execute()
-    rows = data.get("values", [])
+    if not await check_assign_cooldown(ctx):
+        return
+        
+    async with assign_lock:
+        last_assign_time = time.time()
+        print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
+        hoja = SHEET_NAME3
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:X"
+        ).execute()
+        rows = data.get("values", [])
+        fila_prioritaria = None
+        fila_normal = None
+        for i in range(1, len(rows)):
+            row = rows[i] + [""] * 24
+            raw = row[3]           # D
+            trad_status = row[4]   # E
+            clean_status = row[5]  # F
+            type_status = row[6]   # G
+            prioridad = row[17] if len(row) > 17 else "0"  # R
 
-    fila_prioritaria = None
-    fila_normal = None
+            if raw == "1" and trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
+                if prioridad == "1" and fila_prioritaria is None:
+                    fila_prioritaria = i
+                elif prioridad != "1" and fila_normal is None:
+                    fila_normal = i
 
-    for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
-
-        raw = row[3]           # D
-        trad_status = row[4]   # E
-        clean_status = row[5]  # F
-        type_status = row[6]   # G
-        prioridad = row[17] if len(row) > 17 else "0"  # R
-
-        if raw == "1" and trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
-            if prioridad == "1" and fila_prioritaria is None:
-                fila_prioritaria = i
-            elif prioridad != "1" and fila_normal is None:
-                fila_normal = i
-
-    fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
-    if fila_index is None:
-        return await ctx.send("❌ No hay capítulos disponibles para TYPE, terroncito.")
-
-    proyecto = rows[fila_index][1]
-    capitulo = rows[fila_index][2]
-
-    # Mención del canal
-    if proyecto.startswith("#"):
-        nombre_canal = proyecto[1:]
-        canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
-        if canal_discord:
-            proyecto = canal_discord.mention
-
-    asignacion_msg = await ctx.send(
-        f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
-        f"Cuando termines, reacciona con 🟣 para marcarlo como completado.\n\n"
-    )
-    await asignacion_msg.add_reaction("🟣")
-
-    # Marcar TYPE = ASIGNADO (G)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!G{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [["ASIGNADO"]]}
-    ).execute()
-
-    # Guardar timestamp (U)
-    timestamp = datetime.utcnow().isoformat()
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!U{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[timestamp]]}
-    ).execute()
-
-    # Guardar usuario (N)
-    usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!N{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[usuario_guardado]]}
-    ).execute()
-
-    # Guardar ID del mensaje (Q)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!Q{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(asignacion_msg.id)]]}
-    ).execute()
-
-    # Guardar canal (X)
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{hoja}!X{fila_index+1}",
-        valueInputOption="RAW",
-        body={"values": [[str(ctx.channel.id)]]}
-    ).execute()
+        fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
+        if fila_index is None:
+            return await ctx.send("❌ No hay capítulos disponibles para TYPE, terroncito.")
+        proyecto = rows[fila_index][1]
+        capitulo = rows[fila_index][2]
+        # Mención del canal
+        if proyecto.startswith("#"):
+            nombre_canal = proyecto[1:]
+            canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
+            if canal_discord:
+                proyecto = canal_discord.mention
+        asignacion_msg = await ctx.send(
+            f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
+            f"Cuando termines, reacciona con 🟣 para marcarlo como completado.\n\n"
+        )
+        await asyncio.sleep(0.1)
+        await asignacion_msg.add_reaction("🟣")
+        # Marcar TYPE = ASIGNADO (G)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!G{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [["ASIGNADO"]]}
+        ).execute()
+        # Guardar timestamp (U)
+        timestamp = datetime.utcnow().isoformat()
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!U{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[timestamp]]}
+        ).execute()
+        # Guardar usuario (N)
+        usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!N{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[usuario_guardado]]}
+        ).execute()
+        # Guardar ID del mensaje (Q)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!Q{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(asignacion_msg.id)]]}
+        ).execute()
+        # Guardar canal (X)
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!X{fila_index+1}",
+            valueInputOption="RAW",
+            body={"values": [[str(ctx.channel.id)]]}
+        ).execute()
+        # Guardar en memoria temporal
+        assignments[asignacion_msg.id] = {
+            "fila": fila_index + 1,
+            "proceso": "TYPE",
+            "hoja": SHEET_NAME3,
+            "timestamp": datetime.utcnow().timestamp()
+        }
 
 # Ejecutar bot
 bot.run(TOKEN)
