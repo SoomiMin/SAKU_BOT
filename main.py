@@ -230,7 +230,7 @@ PROCESS_CONFIG = {
     }
 }
 
-@tasks.loop(minutes=20)
+@tasks.loop(minutes=40)
 async def revisar_asignaciones_atrasadas():
     try:
         data = sheet.values().get(
