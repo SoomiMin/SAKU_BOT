@@ -200,90 +200,83 @@ async def check_assign_cooldown(ctx) -> bool:
         return False
     return True
 
-@tasks.loop(minutes=20) 
-async def revisar_trad_atrasados():
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!A:X"
-    ).execute()
+PROCESS_CONFIG = {
+    "TRAD": {
+        "status_col": 4,      # E
+        "time_col": 18,       # S
+        "user_col": 11,       # L
+        "msg_col": 14,        # O
+        "channel_col": 21,    # V
+        "emoji": "🟡",
+        "interval_hours": 2
+    },
+    "CLEAN": {
+        "status_col": 5,      # F
+        "time_col": 19,       # T
+        "user_col": 12,       # M
+        "msg_col": 15,        # P
+        "channel_col": 22,    # W
+        "emoji": "🔵",
+        "interval_hours": 2
+    },
+    "TYPE": {
+        "status_col": 6,      # G
+        "time_col": 20,       # U
+        "user_col": 13,       # N
+        "msg_col": 16,        # Q
+        "channel_col": 23,    # X
+        "emoji": "🟣",
+        "interval_hours": 2
+    }
+}
+
+@tasks.loop(minutes=20)
+async def revisar_asignaciones_atrasadas():
+    try:
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!A:X"
+        ).execute()
+    except Exception as e:
+        print("[SHEETS ERROR]", e)
+        return
 
     rows = data.get("values", [])
     now = datetime.utcnow()
+    guild = bot.get_guild(GUILD_IDS[1])
+
+    if not guild:
+        return
 
     for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
+        row = rows[i] + [""] * 30
+        proyecto = row[1]
+        capitulo = row[2]
 
-        status = row[4]          # E
-        timestamp = row[18]      # S
-        user_cell = row[11]      # L
-        proyecto = row[1]        # B
-        capitulo = row[2]        # C
-        msg_id = row[14]         # O
-        asign_channel_id = row[21]  # V, canal donde se hizo la asignación
+        for proceso, cfg in PROCESS_CONFIG.items():
+            status = row[cfg["status_col"]]
+            timestamp = row[cfg["time_col"]]
 
-        if status != "ASIGNADO" or not timestamp:
-            continue
-
-        try:
-            asignado_time = datetime.fromisoformat(timestamp)
-        except:
-            continue
-
-        horas = (now - asignado_time).total_seconds() / 3600
-        if horas >= 2:
-            guild = bot.get_guild(GUILD_IDS[1])
-
-            mention = user_cell
-            if "/" in user_cell:
-                try:
-                    user_id = user_cell.split("/")[-1].strip()
-                    mention = f"<@{user_id}>"
-                except:
-                    pass
-
-            if guild:
-                await enviar_recordatorio(guild, proyecto, asign_channel_id, mention, capitulo, msg_id)
-
-@tasks.loop(minutes=30)
-async def revisar_clean_atrasados():
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!A:X"
-    ).execute()
-
-    rows = data.get("values", [])
-    now = datetime.utcnow()
-
-    for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
-
-        status = row[5]          # F CLEAN
-        timestamp = row[19]      # T TIMCLEAN
-        user_cell = row[12]      # M Rol-CLEAN
-        proyecto = row[1]        # B
-        capitulo = row[2]        # C
-        msg_id = row[15]         # P IDMCLEAN
-        asign_channel_id = row[22]  # W CHCLEAN
-
-        if status != "ASIGNADO" or not timestamp:
-            continue
-
-        try:
-            asignado_time = datetime.fromisoformat(timestamp)
-        except:
-            continue
-
-        horas = (now - asignado_time).total_seconds() / 3600
-        if horas >= 2:
-            guild = bot.get_guild(GUILD_IDS[1])
-            if not guild:
+            if status != "ASIGNADO" or not timestamp:
                 continue
 
+            try:
+                asignado_time = datetime.fromisoformat(timestamp)
+            except:
+                continue
+
+            horas = (now - asignado_time).total_seconds() / 3600
+            if horas < cfg["interval_hours"]:
+                continue
+
+            user_cell = row[cfg["user_col"]]
+            msg_id = row[cfg["msg_col"]]
+            asign_channel_id = row[cfg["channel_col"]]
+
             mention = user_cell
             if "/" in user_cell:
                 try:
-                    user_id = user_cell.split("/")[-1].strip()
-                    mention = f"<@{user_id}>"
+                    mention = f"<@{user_cell.split('/')[-1].strip()}>"
                 except:
                     pass
 
@@ -294,62 +287,8 @@ async def revisar_clean_atrasados():
                 mention=mention,
                 capitulo=capitulo,
                 msg_id=msg_id,
-                proceso="CLEAN",
-                emoji="🔵"
-            )
-
-@tasks.loop(minutes=40)
-async def revisar_type_atrasados():
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME3}!A:X"
-    ).execute()
-
-    rows = data.get("values", [])
-    now = datetime.utcnow()
-
-    for i in range(1, len(rows)):
-        row = rows[i] + [""] * 24
-
-        status = row[6]          # G TYPE
-        timestamp = row[20]      # U TIMTYPE
-        user_cell = row[13]      # N Rol-TYPE
-        proyecto = row[1]        # B
-        capitulo = row[2]        # C
-        msg_id = row[16]         # Q IDMTYPE
-        asign_channel_id = row[23]  # X CHTYPE
-
-        if status != "ASIGNADO" or not timestamp:
-            continue
-
-        try:
-            asignado_time = datetime.fromisoformat(timestamp)
-        except:
-            continue
-
-        horas = (now - asignado_time).total_seconds() / 3600
-        if horas >= 2:
-            guild = bot.get_guild(GUILD_IDS[1])
-            if not guild:
-                continue
-
-            mention = user_cell
-            if "/" in user_cell:
-                try:
-                    user_id = user_cell.split("/")[-1].strip()
-                    mention = f"<@{user_id}>"
-                except:
-                    pass
-
-            await enviar_recordatorio(
-                guild=guild,
-                proyecto=proyecto,
-                asign_channel_id=asign_channel_id,
-                mention=mention,
-                capitulo=capitulo,
-                msg_id=msg_id,
-                proceso="TYPE",
-                emoji="🟣"
+                proceso=proceso,
+                emoji=cfg["emoji"]
             )
 
 # Funciones de Saku_Drive 
@@ -1316,9 +1255,7 @@ f"🎀━━━━━━━━━━━━━━━━━🎀"
 # Eventos de Discord
 @bot.event
 async def on_ready():
-    revisar_trad_atrasados.start()
-    revisar_clean_atrasados.start()
-    revisar_type_atrasados.start()
+    revisar_asignaciones_atrasadas.start()
     print(f"✨ Bot en línea como {bot.user}")
 
 async def enviar_recordatorio(
