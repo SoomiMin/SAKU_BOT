@@ -45,6 +45,21 @@ creds = service_account.Credentials.from_service_account_file(
 sheet_service = build("sheets", "v4", credentials=creds)
 sheet = sheet_service.spreadsheets()
 
+# Funciones de Saku_Status
+def barra(valor: str, ancho=40):
+    if not valor or valor in ["N/A", "0"]:
+        return ""
+    try:
+        v = int(valor)
+    except ValueError:
+        return ""
+    completos = v // 2          # cada █ vale 2
+    medio = v % 2               # sobra 1 → |
+    barras = "█" * completos
+    if medio:
+        barras += "|"
+    return barras.ljust(ancho)
+
 # Funciones de Saku_Asigna 
 # Memoria temporal para todos los procesos
 assignments: Dict[int, Dict[str, Any]] = {}
@@ -494,7 +509,7 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
 
     for intento in range(1, retries + 1):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=20)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
@@ -550,7 +565,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
 
     for intento in range(1, retries + 1):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=20)
             response.raise_for_status()
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, "html.parser")
@@ -640,7 +655,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         try:
             login_url = f"https://{dominio}/login"
             payload = {"username": cath_user, "password": cath_pass}
-            resp = session.post(login_url, data=payload, headers=headers, timeout=15)
+            resp = session.post(login_url, data=payload, headers=headers, timeout=20)
             if resp.status_code == 200:
                 print("✅ Login en Catharsis exitoso (usuario real).")
             else:
@@ -2480,6 +2495,85 @@ async def type(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
+
+# Comando !status
+@bot.command()
+async def status(ctx):
+    if ctx.guild.id not in GUILD_IDS:
+        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
+    try:
+        rango = f"{SHEET_NAME4}!A2:C"
+        resp = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=rango
+        ).execute()
+        rows = resp.get("values", [])
+        if not rows:
+            return await ctx.send("❌ No hay datos en la hoja.")
+        proyectos = []
+        actual = None
+        for row in rows:
+            col_a = row[0] if len(row) > 0 else ""
+            col_b = row[1] if len(row) > 1 else ""
+            col_c = row[2] if len(row) > 2 else "N/A"
+            # Fila de encabezado de proyecto (#hashtag)
+            if col_b.startswith("#"):
+                if actual:
+                    proyectos.append(actual)
+                actual = {
+                    "hashtag": col_b,
+                    "categoria": col_a,
+                    "TYPE": col_c,
+                    "CATH": "N/A",
+                    "ETER": "N/A",
+                    "LEC": "N/A",
+                    "COL": "N/A"
+                }
+                continue
+            # Fila de plataforma
+            if actual:
+                for key in ["CATH", "ETER", "LEC", "COL"]:
+                    if key in col_b:
+                        actual[key] = col_c
+        if actual:
+            proyectos.append(actual)
+
+        # — Paginación
+        por_embed = 1
+        grupos = [proyectos[i:i+por_embed] for i in range(0, len(proyectos), por_embed)]
+
+        for idx, grupo in enumerate(grupos, start=1):
+            texto1 = f"\n\n**({idx}/{len(grupos)})**   "  # título simple
+            #texto1 = f""  # título simple
+            texto2 = f""  # título simple
+            for p in grupo:
+                slug = p["hashtag"].replace("#", "")
+                canal = discord.utils.get(ctx.guild.channels, name=slug)
+                canal_mencion = f"<#{canal.id}>" if canal else p["hashtag"]
+
+                texto1 += (
+                    f"{canal_mencion} — {p['categoria']}\n"
+                )
+                texto2 += (
+                    f"TYPE - {p['TYPE']:<3} {barra(p['TYPE'])}\n"
+                    f"CATH - {p['CATH']:<3} {barra(p['CATH'])}\n"
+                    f"ETER - {p['ETER']:<3} {barra(p['ETER'])}\n"
+                    f"LEC  - {p['LEC']:<3} {barra(p['LEC'])}\n"
+                    f"COL  - {p['COL']:<3} {barra(p['COL'])}\n"
+                )
+
+            # enviamos en bloque de código para mantener alineación
+            await ctx.send(
+                f"{texto1}"
+                f"```{texto2}```"
+                f"ʚɞ\n\n"
+            )
+
+    except Exception as e:
+        await ctx.send("❌ Error al generar status.")
+        print("❌ Error en !status")
+        traceback.print_exc()
+
 
 # Ejecutar bot
 bot.run(TOKEN)
