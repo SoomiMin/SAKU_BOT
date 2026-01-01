@@ -30,6 +30,7 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
+SHEET_NAME4 = os.getenv("SHEET_NAME4")
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
