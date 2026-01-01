@@ -573,9 +573,22 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             # 📌 tomar el último update y no el primero
             blocks = soup.select("a.group.relative.flex")
             if not blocks:
-                return "❌ No se encontró ningún capítulo."
+            return "❌ No se encontró ningún capítulo."
 
-            block = blocks[-1]  # <<--- ESTE ES EL MÁS RECIENTE
+            # 🔍 tomar primer y último bloque
+            candidatos = [blocks[0]]
+            if len(blocks) > 1:
+                candidatos.append(blocks[-1])
+
+            def extraer_cap_num(block):
+                cap_span = block.select_one("span.truncate.text-sm")
+                if not cap_span:
+                    return -1
+                cap_text = cap_span.get_text(strip=True)
+                m = re.search(r'capitulo\s*(\d+)', cap_text, re.I)
+                return int(m.group(1)) if m else -1
+            # 📌 elegir el bloque con el capítulo mayor
+            block = max(candidatos, key=extraer_cap_num)
 
             cap_span = block.select_one("span.truncate.text-sm")
             cap_text = cap_span.get_text(strip=True) if cap_span else "Desconocido"
