@@ -573,7 +573,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             # 📌 tomar el último update y no el primero
             blocks = soup.select("a.group.relative.flex")
             if not blocks:
-            return "❌ No se encontró ningún capítulo."
+                return "❌ No se encontró ningún capítulo."
 
             # 🔍 tomar primer y último bloque
             candidatos = [blocks[0]]
