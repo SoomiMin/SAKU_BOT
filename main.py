@@ -1,4 +1,4 @@
-import os, re, discord, asyncio, requests, time
+import os, re, discord, asyncio, requests, time, json
 from discord.ext import commands
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -311,17 +311,19 @@ async def revisar_asignaciones_atrasadas():
 # Funciones de Saku_Drive 
 def authenticate():
     SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+
+    token_info = os.getenv("GOOGLE_TOKEN_JSON")
+    if not token_info:
+        raise Exception("GOOGLE_TOKEN_JSON no encontrado en env")
+
+    creds = Credentials.from_authorized_user_info(
+        json.loads(token_info),
+        SCOPES
+    )
+
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+
     return creds
 
 def extract_drive_links(text):
