@@ -370,6 +370,32 @@ def traverse_trad(service, folder_id):
     except Exception:
         return None
 
+def traverse_cover(service, folder_id):
+    try:
+        items = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields="files(id,name,mimeType)"
+        ).execute().get("files", [])
+
+        caps = []
+
+        for item in items:
+            # Ignorar subcarpetas
+            if item["mimeType"] == "application/vnd.google-apps.folder":
+                continue
+
+            name = item["name"].strip().lower()
+
+            # Regex estricta: solo número + extensión imagen
+            match = re.match(r"^(\d+)\.(png|jpg|jpeg|webp)$", name)
+            if match:
+                caps.append(int(match.group(1)))
+
+        return sorted(caps)
+
+    except Exception:
+        return []
+
 def join_ranges(numbers):
     if not numbers: return "0"
     numbers = sorted(numbers)
@@ -1349,9 +1375,12 @@ async def drive(ctx):
                     q=f"'{folder_id}' in parents and trashed=false",
                     fields="files(id,name,mimeType)"
                 ).execute().get("files", [])
-
-                raw_caps = trad_caps = clean_caps = type_caps = qc_caps = []
-
+                raw_caps = []
+                trad_caps = []
+                clean_caps = []
+                type_caps = []
+                qc_caps = []
+                cover_caps = []
                 for item in items:
                     if item["mimeType"] != "application/vnd.google-apps.folder":
                         continue
@@ -1366,6 +1395,7 @@ async def drive(ctx):
                         type_caps = traverse_folder(service, item["id"])
                     elif "qc" in name_lower or "ready" in name_lower:
                         qc_caps = traverse_folder(service, item["id"])
+                        cover_caps = traverse_cover(service, item["id"])
 
                 # --- 💖 Embed bonito con color sakura ---
                 embed = discord.Embed(
@@ -1377,6 +1407,7 @@ async def drive(ctx):
                 embed.add_field(name="💬 TRAD", value=join_ranges(trad_caps), inline=True)
                 embed.add_field(name="🧼 CLEAN", value=join_ranges(clean_caps), inline=True)
                 embed.add_field(name="🖋 TYPE", value=join_ranges(type_caps), inline=True)
+                embed.add_field(name="🎨 COVER", value=join_ranges(cover_caps), inline=True)
                 embed.add_field(name="⬆️ CHECKED", value=join_ranges(qc_caps), inline=True)
                 embed.set_footer(text="Revisión completada con éxito 🌸")
 
