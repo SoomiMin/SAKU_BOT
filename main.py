@@ -31,6 +31,7 @@ SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
+SHEET_NAME5 = os.getenv("SHEET_NAME5")
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
@@ -163,7 +164,7 @@ async def on_reaction_add(reaction, user):
             except:
                 await reaction.message.channel.send(
                     f"✨ <@{user.id}> completó TYPE.\n"
-                    f"<@&1357527939226533920>, el capítulo está listo para subir. 💖"
+                    f"El capítulo ha sido añadido al proceso de QC 💖"
                 )
             # --- Eliminar de memoria ---
             assignments.pop(msg_id, None)
@@ -2546,6 +2547,77 @@ async def type(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
+
+# Comando !check
+@bot.command()
+async def check(ctx):
+    global last_assign_time
+    if not await check_assign_cooldown(ctx):
+        return
+    async with assign_lock:
+        last_assign_time = time.time()
+        print(f"[ASSIGN] QC solicitado por {ctx.author.id}")
+        await ctx.send("📚 ¿Cuántos capítulos deseas revisar? (máximo 15)")
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+        try:
+            msg = await bot.wait_for("message", timeout=30.0, check=check)
+            cantidad = int(msg.content)
+            if cantidad < 1 or cantidad > 15:
+                return await ctx.send("⚠️ Debes elegir un número entre 1 y 15.")
+        except:
+            return await ctx.send("⏳ Tiempo agotado o número inválido.")
+        # Leer hoja DATOS
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME5}!A2:H"
+        ).execute()
+        rows = data.get("values", [])
+        disponibles = []
+        updates = []
+        for i, row in enumerate(rows):
+            row += [""] * (8 - len(row))
+            proyecto = row[0]
+            capitulo = row[1]
+            pr = row[6].strip()
+            check_col = row[7].strip()
+            if pr == "" and check_col == "":
+                disponibles.append((i, proyecto, capitulo))
+            if len(disponibles) >= cantidad:
+                break
+        if not disponibles:
+            return await ctx.send("😔 No hay capítulos disponibles para QC en este momento.")
+        # 👇 Guardar SOLO el nombre visible en Sheets
+        nombre_visible = f"@{ctx.author.display_name}"
+        for fila_index, _, _ in disponibles:
+            sheet_row_number = fila_index + 2
+            updates.append({
+                "range": f"{SHEET_NAME5}!H{sheet_row_number}",
+                "values": [[nombre_visible]]
+            })
+        sheet.values().batchUpdate(
+            spreadsheetId=SPREADSHEET_ID,
+            body={
+                "valueInputOption": "USER_ENTERED",
+                "data": updates
+            }
+        ).execute()
+        # Construir mensaje final
+        mensaje_final = f"👁️ {ctx.author.mention}, tus asignaciones para QC son las siguientes:\n"
+        for _, proyecto, capitulo in disponibles:
+            # Convertir #canal en mención real
+            if proyecto.startswith("#"):
+                nombre_canal = proyecto[1:]
+                canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
+                if canal_discord:
+                    proyecto = canal_discord.mention
+
+            mensaje_final += f" **CH. {capitulo}** -- {proyecto}\n"
+
+        mensaje_final += f" > Total de capítulos a revisar: **{len(disponibles)}**"
+        mensaje_final += "\n > *Cuando termines, reacciona a esta asignación con un  💖*"
+
+        await ctx.send(mensaje_final)
 
 # Comando !status
 @bot.command()
