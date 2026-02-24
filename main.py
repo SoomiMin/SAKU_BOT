@@ -2385,7 +2385,9 @@ async def trad(ctx):
         # Enviar la asignación
         asignacion_msg = await ctx.send(
             f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
-            f"Cuando termines, reacciona con 🟡 para marcarlo como completado.\n\n"
+            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
+            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
         )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🟡")
@@ -2480,7 +2482,10 @@ async def clean(ctx):
         # Enviar mensaje de asignación
         asignacion_msg = await ctx.send(
             f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
-            f"Cuando termines, reacciona con 🔵 para marcarlo como completado.\n\n"
+            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
+            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Las tiras limpias deben ser en formato JPG.*\n "
+            f" > - *Cuando termines, reacciona con 🔵 para marcarlo como completado.*\n\n"
         )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🔵")
@@ -2575,7 +2580,10 @@ async def type(ctx):
                 proyecto = canal_discord.mention
         asignacion_msg = await ctx.send(
             f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
-            f"Cuando termines, reacciona con 🟣 para marcarlo como completado.\n\n"
+            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
+            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *| Tiras editables/JPG - cover - hoja de créditos | deben ir en sus canales correspondientes*\n "
+            f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
         )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🟣")
