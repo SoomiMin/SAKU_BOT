@@ -2157,22 +2157,97 @@ async def upraw(ctx):
 
     idioma_values = idioma_cols[idioma]
 
-    # 4 — PREGUNTAR SI TIENE PRIORIDAD
+    # 4 — PREGUNTAR SI VA A SEPARAR ROLES
     await ctx.send(
-        "⚠️ **¿Tiene prioridad?**\n"
+        "🔒 **¿Vas a separar roles?**\n"
         "`1` para SÍ\n"
         "`0` para NO\n"
     )
 
     try:
-        msg4 = await bot.wait_for("message", check=check, timeout=120)
+        msg_sep = await bot.wait_for("message", check=check, timeout=120)
     except asyncio.TimeoutError:
-        return await ctx.send("⏳ Se acabó el tiempo mi amorcito 😿")
+        return await ctx.send("⏳ Se acabó el tiempo, mi cielo.")
 
-    prioridad_text = msg4.content.strip().lower()
-    prioridad = "1" if prioridad_text in ["1"] else "0"
+    separar_roles = msg_sep.content.strip()
 
+    trad_apartado = ""
+    clean_apartado = ""
+    type_apartado = ""
 
+    # SI SEPARA ROLES
+    if separar_roles == "1":
+
+        await ctx.send(
+            "✏️ **Escribe en orden qué roles separas:**\n"
+            "`TRAD CLEAN TYPE`\n"
+            "Ejemplo: `1 0 0`"
+        )
+
+        while True:
+            try:
+                msg_roles = await bot.wait_for("message", check=check, timeout=120)
+                partes = msg_roles.content.strip().split()
+
+                if len(partes) != 3:
+                    raise ValueError
+
+                r_trad, r_clean, r_type = partes
+
+                if r_trad not in ["0","1"] or r_clean not in ["0","1"] or r_type not in ["0","1"]:
+                    raise ValueError
+
+                total_bloqueados = int(r_trad) + int(r_clean) + int(r_type)
+
+                # ❌ No puede ser 0 ni 3
+                if total_bloqueados == 0 or total_bloqueados == 3:
+                    await ctx.send(
+                        "⚠️ Debes bloquear al menos 1 rol y máximo 2.\n"
+                        "No puede ser `0 0 0` ni `1 1 1`.\n"
+                        "Intenta nuevamente:"
+                    )
+                    continue
+
+                break  # todo válido
+
+            except:
+                await ctx.send("❌ Formato inválido. Escribe algo como: `1 0 0`")
+
+        # Marcar como APARTADO
+        trad_apartado = "APARTADO" if r_trad == "1" else ""
+        clean_apartado = "APARTADO" if r_clean == "1" else ""
+        type_apartado = "APARTADO" if r_type == "1" else ""
+
+        prioridad = "1"  # Automático
+
+        # Construir texto de roles bloqueados
+        roles_bloqueados_lista = []
+
+        if r_trad == "1":
+            roles_bloqueados_lista.append("TRAD")
+        if r_clean == "1":
+            roles_bloqueados_lista.append("CLEAN")
+        if r_type == "1":
+            roles_bloqueados_lista.append("TYPE")
+
+        roles_bloqueados_texto = " | ".join(roles_bloqueados_lista)
+
+    # SI NO SEPARA ROLES
+    else:
+
+        await ctx.send(
+            "⚠️ **¿Tiene prioridad?**\n"
+            "`1` para SÍ\n"
+            "`0` para NO\n"
+        )
+
+        try:
+            msg4 = await bot.wait_for("message", check=check, timeout=120)
+        except asyncio.TimeoutError:
+            return await ctx.send("⏳ Se acabó el tiempo mi amorcito 😿")
+
+        prioridad = "1" if msg4.content.strip() == "1" else "0"
+    
     # 5 — LEER HOJA PARA SABER EL SIGUIENTE ÍTEM
     hoja = SHEET_NAME3
     existing = sheet.values().get(
@@ -2194,9 +2269,9 @@ async def upraw(ctx):
             proyecto,           # B — Proyecto
             str(cap),           # C — Capítulo
             "1",                # D — RAW
-            "",                 # E — TRAD
-            "",                 # F — CLEAN
-            "",                 # G — TYPE
+            trad_apartado,    # E — TRAD
+            clean_apartado,   # F — CLEAN
+            type_apartado,    # G — TYPE
             idioma_values[0],   # H — KR
             idioma_values[1],   # I — ING
             idioma_values[2],   # J — INDO
@@ -2226,12 +2301,13 @@ async def upraw(ctx):
             proyecto = canal_discord.mention
 
     # 8 Mensaje bonito final UwU
-    await ctx.send(
+    mensaje_final = (
         f"✅ **Se han registrado {len(capitulos)} capítulos como RAW para {proyecto}**\n"
-#        f"Capítulos: `{', '.join(str(c) for c in capitulos)}`\n"
-#        f"Idioma asignado: **{['KR','ING','INDO','CHIN'][idioma-1]}**\n\n"
-        "Todo quedó guardado en la hoja **ASIGNACIONES** 💖✨\n"
     )
+    if separar_roles == "1":
+        mensaje_final += f"📝 Nota: Roles bloqueados: **{roles_bloqueados_texto}**\n"
+    mensaje_final += "Todo quedó guardado en la hoja **ASIGNACIONES** 💖✨"
+    await ctx.send(mensaje_final)
 
 # Comando !trad 
 @bot.command()
