@@ -100,27 +100,32 @@ async def on_reaction_add(reaction, user):
             msg_id = reaction.message.id
             print(f"[REACTION] {proceso} msg {msg_id} por {user.id}")
             # --- Buscar en memoria ---
-            ##asumo que aqui seria poner si no esta en la memoria, que busque en la hoja de google sheets
             mem = assignments.get(msg_id)
             now_ts = datetime.utcnow().timestamp()
-            if mem:
-                # revisar expiración
-                if now_ts - mem["timestamp"] > 300:  # 300s = 5 min
-                    assignments.pop(msg_id, None)
-                    mem = None  # forzar fallback
 
+            # Si existe en memoria, validar expiración
+            if mem and now_ts - mem["timestamp"] > 300:
+                assignments.pop(msg_id, None)
+                mem = None
+
+            # 🔥 SI NO EXISTE (o expiró), buscar SIEMPRE en Sheets
+            if not mem:
+                print("[FALLBACK] Buscando en Sheets...")
+                mem = buscar_en_sheets_por_message_id(msg_id, proceso)
                 if not mem:
-                    mem = buscar_en_sheets_por_message_id(msg_id, proceso)
-                    if not mem:
-                        return  # no es válido, ignorar
-                    # si lo traemos de sheets, lo guardamos en memoria
-                    mem["timestamp"] = now_ts
-                    assignments[msg_id] = mem
-                # Seguridad extra: validar proceso
-                if mem["proceso"] != proceso:
+                    print("[FALLBACK] No encontrado en Sheets")
                     return
-                fila = mem["fila"]
-                hoja = mem["hoja"]
+
+                mem["timestamp"] = now_ts
+                assignments[msg_id] = mem
+
+            # Validar proceso
+            if mem["proceso"] != proceso:
+                return
+
+            fila = mem["fila"]
+            hoja = mem["hoja"]
+            status_index, id_index = col_status, col_id
             status_index, id_index = col_status, col_id
             # actualizar estado
             sheet.values().update(
