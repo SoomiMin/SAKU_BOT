@@ -1772,7 +1772,8 @@ async def table(ctx):
 
 # Comando !acceso
 @bot.command()
-@commands.has_role(1357527939226533920)  # Rol ADMIN
+#@commands.has_role(1357527939226533920)  # Rol ADMIN
+@commands.has_any_role(1357527939226533920, 1463686138689622250) ##ADMIN/QC
 async def acceso(ctx, user: discord.Member = None):
     """Otorga acceso de editor a un usuario según la lista USUARIOS."""
     if user is None:
@@ -2786,6 +2787,56 @@ async def status(ctx):
         print("❌ Error en !status")
         traceback.print_exc()
 
+# 🌸 Comando !create
+@bot.command()
+@commands.has_role(1357527939226533920)  # Rol ADMIN
+async def create(ctx):
+    try:
+        drive_service = build("drive", "v3", credentials=creds)
+        parent_folder_id = "1dhw0WVEF6itoevYdZ__YwoTosQgudZwm"
+
+        # Buscar carpetas disponibles
+        results = drive_service.files().list(
+            q=f"'{parent_folder_id}' in parents and trashed=false",
+            fields="files(id,name)"
+        ).execute().get("files", [])
+        disponibles = [f for f in results if f['name'].startswith("Z")]
+        if not disponibles:
+            return await ctx.send("❌ No hay carpetas numeradas disponibles.")
+
+        # Elegir la de número más chico
+        def extraer_num(nombre):
+            try:
+                return int(nombre[1:12])
+            except:
+                return float('inf')
+        carpeta_obj = min(disponibles, key=lambda f: extraer_num(f['name']))
+
+        # Renombrar
+        new_name = f"#{ctx.channel.name}"
+        drive_service.files().update(fileId=carpeta_obj['id'], body={"name": new_name}).execute()
+
+        # Link
+        folder_link = f"https://drive.google.com/drive/folders/{carpeta_obj['id']}"
+
+        # Enviar mensaje
+        message = await ctx.send(
+            f" > ***¡Espacio para proyecto creado!*** 📂\n"
+            f" > Para acceder, se te comparte el enlace:\n*{folder_link}*"
+        )
+        # Fijar el mensaje
+        try:
+            await message.pin()
+        except:
+            await ctx.send("⚠️ No pude fijar el mensaje. Verifica permisos del bot.")
+
+    except HttpError as e:
+        await ctx.send("❌ Error al conectar con Google Drive.")
+        print(f"[ERROR CREATE] {e}")
+
+    except Exception as e:
+        await ctx.send("⚠️ Ocurrió un error inesperado al crear la carpeta.")
+        print(f"[ERROR CREATE GENERAL] {e}")
 
 # Ejecutar bot
 bot.run(TOKEN)
