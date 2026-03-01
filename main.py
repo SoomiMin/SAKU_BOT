@@ -2844,7 +2844,7 @@ async def create(ctx):
 @commands.has_guild_permissions(manage_channels=True)
 async def ficha_cmd(ctx: commands.Context):
     author = ctx.author
-    timeout = 180
+    timeout = 250
 
     try:
         canal_actual = ctx.channel.name.lower()
