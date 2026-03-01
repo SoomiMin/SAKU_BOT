@@ -2393,6 +2393,7 @@ async def trad(ctx):
             f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
             f" > - *Si no tienes acceso al canal, solicítalo.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Consulta al Team QC si el forma de trato es formal o informal.*\n "
             f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
         )
         await asyncio.sleep(0.1)
@@ -2838,5 +2839,127 @@ async def create(ctx):
         await ctx.send("⚠️ Ocurrió un error inesperado al crear la carpeta.")
         print(f"[ERROR CREATE GENERAL] {e}")
 
+# Comando !ficha
+@bot.command(name="ficha")
+@commands.has_guild_permissions(manage_channels=True)
+async def ficha_cmd(ctx: commands.Context):
+    author = ctx.author
+    timeout = 180
+
+    try:
+        canal_actual = ctx.channel.name.lower()
+        await ctx.send("*🔎 Revisando si el canal ya tiene ficha...*")
+        rows = get_sheet_rows()
+        # Verificar duplicado en columna B
+        for row in rows:
+            if len(row) > 1:
+                if row[1].strip().lower() == canal_actual:
+                    await ctx.send("❌ *Este canal ya tiene una ficha registrada. Proceso cancelado.*")
+                    return
+
+        # Obtener siguiente número de item
+        numeros = []
+        for row in rows:
+            if len(row) > 0:
+                try:
+                    numeros.append(int(row[0]))
+                except:
+                    pass
+
+        nuevo_item = max(numeros) + 1 if numeros else 1
+        nuevo_nombre = f"{nuevo_item}-{canal_actual}"
+
+        # Insertar fila inicial (A y B)
+        nueva_fila = [[
+            str(nuevo_item),
+            nuevo_nombre,
+            "", "", "", ""
+        ]]
+
+        sheet.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!A:F",
+            valueInputOption="USER_ENTERED",
+            body={"values": nueva_fila}
+        ).execute()
+
+        # Intentar renombrar canal
+        try:
+            await ctx.channel.edit(name=nuevo_nombre)
+            await ctx.send(f"*✅ Canal renombrado automáticamente a * **{nuevo_nombre}**")
+        except:
+            await ctx.send(f"⚠️ *No pude renombrar el canal automáticamente.\nSe recomienda cambiarlo a {nuevo_nombre}*")
+
+        # PEDIR TÍTULO
+        await ctx.send(f" > Escriba el título del proyecto:")
+        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        titulo = msg.content.strip()
+
+        # Actualizar columna C
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!C{len(rows)+2}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[titulo]]}
+        ).execute()
+
+        # SINOPSIS
+        await ctx.send(f" > Escriba la sinopsis del proyecto:")
+        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        sinopsis = msg.content.strip()
+
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!D{len(rows)+2}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[sinopsis]]}
+        ).execute()
+
+        # GÉNEROS
+        await ctx.send(f" > Inserte los géneros separados por coma y espacio *(Ej: Acción, Drama, BL)*:")
+        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        generos = msg.content.strip()
+
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!E{len(rows)+2}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[generos]]}
+        ).execute()
+
+        # TIPO
+        await ctx.send(
+            f" > Escribe el número correspondiente al tipo:\n"
+            f"`1` - Manhwa\n"
+            f"`2` - Manga\n"
+            f"`3` - Manhua\n"
+            f"`4` - Novela\n"
+            f"`5` - Webtoon"
+        )
+        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        tipos = {
+            "1": "Manhwa",
+            "2": "Manga",
+            "3": "Manhua",
+            "4": "Novela",
+            "5": "Webtoon"
+        }
+        tipo = tipos.get(msg.content.strip(), "Manhwa")
+        sheet.values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!F{len(rows)+2}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[tipo]]}
+        ).execute()
+        await ctx.send(
+            f"*🎉 ¡Ficha completada!*\n"
+            f"## El código único del proyecto es: **{nuevo_item}**"
+        )
+    except asyncio.TimeoutError:
+        await ctx.send("*⏰ Tiempo agotado. Proceso cancelado.*")
+    except Exception as e:
+        print("Error en !ficha:", e)
+        await ctx.send(f"*❌ Ocurrió un error inesperado: {e}*")
+    
 # Ejecutar bot
 bot.run(TOKEN)
