@@ -2848,8 +2848,11 @@ async def ficha_cmd(ctx: commands.Context):
 
     try:
         canal_actual = ctx.channel.name.lower()
+
         await ctx.send("*🔎 Revisando si el canal ya tiene ficha...*")
+
         rows = get_sheet_rows()
+
         # Verificar duplicado en columna B
         for row in rows:
             if len(row) > 1:
@@ -2859,34 +2862,50 @@ async def ficha_cmd(ctx: commands.Context):
 
         # Obtener siguiente número de item
         numeros = []
-        for row in rows:
-            if len(row) > 0:
-                try:
-                    numeros.append(int(row[0]))
-                except:
-                    pass
+        fila_reutilizable = None
+        fila_index_real = None  # fila real en la hoja (contando encabezado)
 
-        nuevo_item = max(numeros) + 1 if numeros else 1
+        for i, row in enumerate(rows):
+            fila_real = i + 2  # porque empezamos en A2
+
+            col_a = row[0].strip() if len(row) > 0 and row[0] else ""
+            col_b = row[1].strip() if len(row) > 1 and row[1] else ""
+
+            # Guardar números válidos
+            if col_a.isdigit():
+                numeros.append(int(col_a))
+
+                # Detectar fila reutilizable
+                if col_b == "" and fila_reutilizable is None:
+                    fila_reutilizable = int(col_a)
+                    fila_index_real = fila_real
+
+        # Decidir número a usar
+        if fila_reutilizable:
+            nuevo_item = fila_reutilizable
+            fila_objetivo = fila_index_real
+        else:
+            nuevo_item = max(numeros) + 1 if numeros else 1
+            fila_objetivo = len(rows) + 2  # nueva fila al final
+
         nuevo_nombre = f"{nuevo_item}-{canal_actual}"
 
-        # Insertar fila inicial (A y B)
-        nueva_fila = [[
-            str(nuevo_item),
-            nuevo_nombre,
-            "", "", "", ""
-        ]]
-
-        sheet.values().append(
+        # Escribir A y B en la fila objetivo
+        sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME2}!A:F",
+            range=f"{SHEET_NAME2}!A{fila_objetivo}:F{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": nueva_fila}
+            body={"values": [[
+                str(nuevo_item),
+                nuevo_nombre,
+                "", "", "", ""
+            ]]}
         ).execute()
 
         # Intentar renombrar canal
         try:
             await ctx.channel.edit(name=nuevo_nombre)
-            await ctx.send(f"*✅ Canal renombrado automáticamente a * **{nuevo_nombre}**")
+            await ctx.send(f"*✅ Canal renombrado automáticamente a* **{nuevo_nombre}**")
         except:
             await ctx.send(f"⚠️ *No pude renombrar el canal automáticamente.\nSe recomienda cambiarlo a {nuevo_nombre}*")
 
@@ -2898,7 +2917,7 @@ async def ficha_cmd(ctx: commands.Context):
         # Actualizar columna C
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME2}!C{len(rows)+2}",
+            range=f"{SHEET_NAME2}!C{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[titulo]]}
         ).execute()
@@ -2910,7 +2929,7 @@ async def ficha_cmd(ctx: commands.Context):
 
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME2}!D{len(rows)+2}",
+            range=f"{SHEET_NAME2}!D{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[sinopsis]]}
         ).execute()
@@ -2922,7 +2941,7 @@ async def ficha_cmd(ctx: commands.Context):
 
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME2}!E{len(rows)+2}",
+            range=f"{SHEET_NAME2}!E{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[generos]]}
         ).execute()
@@ -2936,7 +2955,9 @@ async def ficha_cmd(ctx: commands.Context):
             f"`4` - Novela\n"
             f"`5` - Webtoon"
         )
+
         msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+
         tipos = {
             "1": "Manhwa",
             "2": "Manga",
@@ -2944,17 +2965,21 @@ async def ficha_cmd(ctx: commands.Context):
             "4": "Novela",
             "5": "Webtoon"
         }
+
         tipo = tipos.get(msg.content.strip(), "Manhwa")
+
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME2}!F{len(rows)+2}",
+            range=f"{SHEET_NAME2}!F{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[tipo]]}
         ).execute()
+
         await ctx.send(
             f"*🎉 ¡Ficha completada!*\n"
             f"## El código único del proyecto es: **{nuevo_item}**"
         )
+
     except asyncio.TimeoutError:
         await ctx.send("*⏰ Tiempo agotado. Proceso cancelado.*")
     except Exception as e:
