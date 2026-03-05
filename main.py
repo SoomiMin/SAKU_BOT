@@ -2391,9 +2391,9 @@ async def trad(ctx):
         # Enviar la asignación
         asignacion_msg = await ctx.send(
             f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
-            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
+            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *Consulta al Team QC si el forma de trato es formal o informal.*\n "
+            f" > - *Consulta a QC sobre como se expresan los personajes según proyecto.*\n "
             f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
         )
         await asyncio.sleep(0.1)
@@ -2489,9 +2489,10 @@ async def clean(ctx):
         # Enviar mensaje de asignación
         asignacion_msg = await ctx.send(
             f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
-            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
-            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *Las tiras limpias deben ser en formato JPG.*\n "
+            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
+            f" > - *Usa !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Recuerde colocar las marcas de agua adecuadamente.*\n "
+            f" > - *Las tiras completadas deben ser entregadas en formato JPG.*\n "
             f" > - *Cuando termines, reacciona con 🔵 para marcarlo como completado.*\n\n"
         )
         await asyncio.sleep(0.1)
@@ -2587,9 +2588,9 @@ async def type(ctx):
                 proyecto = canal_discord.mention
         asignacion_msg = await ctx.send(
             f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
-            f" > - *Si no tienes acceso al canal, solicítalo.*\n "
+            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *| Tiras editables/JPG - cover - hoja de créditos | deben ir en sus canales correspondientes*\n "
+            f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
             f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
         )
         await asyncio.sleep(0.1)
@@ -2641,51 +2642,66 @@ async def type(ctx):
 
 # Comando !check
 @bot.command()
-async def check(ctx):
+async def ch(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
         return
+
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] QC solicitado por {ctx.author.id}")
+
         await ctx.send("📚 ¿Cuántos capítulos deseas revisar? (máximo 15)")
-        def check(m):
+
+        def check_msg(m):
             return m.author == ctx.author and m.channel == ctx.channel
+
         try:
-            msg = await bot.wait_for("message", timeout=30.0, check=check)
+            msg = await bot.wait_for("message", timeout=30.0, check=check_msg)
             cantidad = int(msg.content)
             if cantidad < 1 or cantidad > 15:
                 return await ctx.send("⚠️ Debes elegir un número entre 1 y 15.")
         except:
             return await ctx.send("⏳ Tiempo agotado o número inválido.")
-        # Leer hoja DATOS
+
+        # Leer hoja de asignaciones
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_NAME5}!A2:H"
+            range=f"{SHEET_NAME3}!A2:Y"  # desde A hasta Y
         ).execute()
         rows = data.get("values", [])
+
         disponibles = []
         updates = []
+
+        # Buscar capítulos disponibles para QC
         for i, row in enumerate(rows):
-            row += [""] * (8 - len(row))
-            proyecto = row[0]
-            capitulo = row[1]
-            pr = row[6].strip()
-            check_col = row[7].strip()
-            if pr == "" and check_col == "":
+            row += [""] * 25  # asegurar al menos 25 columnas
+            proyecto = row[1]  # columna B
+            capitulo = row[2]  # columna C
+            status_trad = row[4].strip()  # E
+            status_clean = row[5].strip()  # F
+            status_type = row[6].strip()  # G
+            check_col = row[24].strip()  # Y
+
+            # Solo tomar capítulos que aún no estén completados y sin CHECKER
+            if status_trad == "COMPLETADO" and status_clean == "COMPLETADO" and status_type == "COMPLETADO" and check_col == "":
                 disponibles.append((i, proyecto, capitulo))
-            if len(disponibles) >= cantidad:
-                break
+                if len(disponibles) >= cantidad:
+                    break
+
         if not disponibles:
             return await ctx.send("😔 No hay capítulos disponibles para QC en este momento.")
-        # 👇 Guardar SOLO el nombre visible en Sheets
+
+        # Guardar @usuario en columna Y
         nombre_visible = f"@{ctx.author.display_name}"
         for fila_index, _, _ in disponibles:
             sheet_row_number = fila_index + 2
             updates.append({
-                "range": f"{SHEET_NAME5}!H{sheet_row_number}",
+                "range": f"{SHEET_NAME3}!Y{sheet_row_number}",
                 "values": [[nombre_visible]]
             })
+
         sheet.values().batchUpdate(
             spreadsheetId=SPREADSHEET_ID,
             body={
@@ -2693,21 +2709,19 @@ async def check(ctx):
                 "data": updates
             }
         ).execute()
-        # Construir mensaje final
+
+        # Construir mensaje final con mención de canal si aplica
         mensaje_final = f"👁️ {ctx.author.mention}, tus asignaciones para QC son las siguientes:\n"
         for _, proyecto, capitulo in disponibles:
-            # Convertir #canal en mención real
             if proyecto.startswith("#"):
                 nombre_canal = proyecto[1:]
                 canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
                 if canal_discord:
                     proyecto = canal_discord.mention
-
             mensaje_final += f" **CH. {capitulo}** -- {proyecto}\n"
 
         mensaje_final += f" > Total de capítulos a revisar: **{len(disponibles)}**"
         mensaje_final += "\n > *Cuando termines, reacciona a esta asignación con un  💖*"
-
         await ctx.send(mensaje_final)
 
 # Comando !status
