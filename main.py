@@ -2642,7 +2642,7 @@ async def type(ctx):
 
 # Comando !check
 @bot.command()
-async def ch(ctx):
+async def check(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
         return
