@@ -25,13 +25,29 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# - SISTEMA DE PERMISOS
+CANALES_COMANDOS = {
+    "trad": [1314958804856733788, 1462211348380389426],
+    "clean": [1314959202749251687, 1462211348380389426],
+    "type": [1314958959378956338, 1462211348380389426],
+    "check": [1470647289860063263],
+    "update": [1440464661031157940],
+}
+
+ROLES_COMANDOS = {
+    "upraw": [1479178635327045702, 1357527939226533920],
+    "table": [1470647289860063263, 1357527939226533920],
+    "gen": [1470647289860063263, 1357527939226533920],
+    "status": [1470647289860063263, 1357527939226533920],
+    "ficha": [1470647289860063263, 1357527939226533920],
+}
+
 # — Configuración de la hoja
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
-SHEET_NAME5 = os.getenv("SHEET_NAME5")
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
@@ -47,6 +63,37 @@ creds = service_account.Credentials.from_service_account_file(
 # — Crear cliente de Sheets
 sheet_service = build("sheets", "v4", credentials=creds)
 sheet = sheet_service.spreadsheets()
+
+# Funciones de Saku-COMMS
+def canal_permitido(nombre_comando):
+    async def predicate(ctx):
+        canales = CANALES_COMANDOS.get(nombre_comando, [])
+
+        if not canales:
+            return True
+
+        if ctx.channel.id not in canales:
+            await ctx.send("🌸 Lo siento amor, no puedes usar este comando aquí.")
+            return False
+
+        return True
+
+    return commands.check(predicate)
+    
+def rol_permitido(nombre_comando):
+    async def predicate(ctx):
+        roles = ROLES_COMANDOS.get(nombre_comando, [])
+
+        if not roles:
+            return True
+
+        if not any(role.id in roles for role in ctx.author.roles):
+            await ctx.send("🌸 No puedes usar este comando ya que no tienes el rol adecuado, cielito.")
+            return False
+
+        return True
+
+    return commands.check(predicate)
 
 # Funciones de Saku_Status
 def barra(valor: str, ancho=40):
@@ -1656,6 +1703,7 @@ def escribir_a_hoja(canal, categoria, resultados):
         
 # Comando !table
 @bot.command()
+@rol_permitido("table")
 async def table(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
@@ -1772,7 +1820,6 @@ async def table(ctx):
 
 # Comando !acceso
 @bot.command()
-#@commands.has_role(1357527939226533920)  # Rol ADMIN
 @commands.has_any_role(1357527939226533920, 1463686138689622250) ##ADMIN/QC
 async def acceso(ctx, user: discord.Member = None):
     """Otorga acceso de editor a un usuario según la lista USUARIOS."""
@@ -1910,6 +1957,7 @@ async def acceso(ctx, user: discord.Member = None):
 
 # Comando !gen
 @bot.command()
+@rol_permitido("gen")
 async def gen(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
@@ -1977,6 +2025,7 @@ async def gen(ctx):
 
 # Comando !update
 @bot.command(name="update")
+@canal_permitido("update")
 @commands.has_guild_permissions(send_messages=True)
 async def update_cmd(ctx: commands.Context):
     """
@@ -2084,6 +2133,7 @@ async def update_cmd(ctx: commands.Context):
 
 # Comando !upraw
 @bot.command()
+@rol_permitido("upraw")
 async def upraw(ctx):
     await ctx.send("💬 ¿Cuál es el canal/proyecto?")
 
@@ -2317,6 +2367,7 @@ async def upraw(ctx):
 
 # Comando !trad 
 @bot.command()
+@canal_permitido("trad")
 async def trad(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
@@ -2444,6 +2495,7 @@ async def trad(ctx):
 
 # Comando !clean
 @bot.command()
+@canal_permitido("clean")
 async def clean(ctx):
     global last_assign_time
 
@@ -2544,6 +2596,7 @@ async def clean(ctx):
 
 # Comando !type
 @bot.command()
+@canal_permitido("type")
 async def type(ctx):
     global last_assign_time
 
@@ -2642,6 +2695,7 @@ async def type(ctx):
 
 # Comando !check
 @bot.command()
+@canal_permitido("check")
 async def check(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
@@ -2726,6 +2780,7 @@ async def check(ctx):
 
 # Comando !status
 @bot.command()
+@rol_permitido("status")
 async def status(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
@@ -2855,6 +2910,7 @@ async def create(ctx):
 
 # Comando !ficha
 @bot.command(name="ficha")
+@rol_permitido("ficha")
 @commands.has_guild_permissions(manage_channels=True)
 async def ficha_cmd(ctx: commands.Context):
     author = ctx.author
