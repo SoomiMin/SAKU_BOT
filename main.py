@@ -2602,14 +2602,14 @@ async def type(ctx):
 
     if not await check_assign_cooldown(ctx):
         return
-        
+
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
         hoja = SHEET_NAME3
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{hoja}!A:X"
+            range=f"{hoja}!A:Y"
         ).execute()
         rows = data.get("values", [])
         fila_prioritaria = None
@@ -2639,13 +2639,26 @@ async def type(ctx):
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto = canal_discord.mention
-        asignacion_msg = await ctx.send(
-            f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
-            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
-            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
-            f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
-        )
+        ROL_TYPE_QC = 1463686138689622250
+        tiene_doble_rol = any(role.id == ROL_TYPE_QC for role in ctx.author.roles)
+
+        if tiene_doble_rol:
+            asignacion_msg = await ctx.send(
+                f"🎨+👁️ <@{ctx.author.id}>, tu asignación **TYPE/QC** es {proyecto} - **capítulo {capitulo}**.\n"
+                f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
+                f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Tiras editables, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
+                f" > - *En tu caso, apóyanos realizando su respectivo QC y WEBP.*\n "
+                f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
+            )
+        else:
+            asignacion_msg = await ctx.send(
+                f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
+                f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
+                f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
+                f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
+            )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🟣")
         # Marcar TYPE = ASIGNADO (G)
@@ -2685,6 +2698,15 @@ async def type(ctx):
             valueInputOption="RAW",
             body={"values": [[str(ctx.channel.id)]]}
         ).execute()
+        # Guardar QC automático si el usuario tiene doble rol
+        if tiene_doble_rol:
+            nombre_visible = f"@{ctx.author.display_name}"
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!Y{fila_index+1}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[nombre_visible]]}
+            ).execute()
         # Guardar en memoria temporal
         assignments[asignacion_msg.id] = {
             "fila": fila_index + 1,
