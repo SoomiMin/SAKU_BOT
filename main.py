@@ -42,6 +42,12 @@ ROLES_COMANDOS = {
     "ficha": [1470647289860063263, 1357527939226533920],
 }
 
+CANALES_REGISTRO = {
+    "regis-trad": [1314989167851343963], 
+    "regis-clean": [1420511464090898535],
+    "regis-type": [1420511546874003614],
+}
+
 # — Configuración de la hoja
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
@@ -94,6 +100,41 @@ def rol_permitido(nombre_comando):
         return True
 
     return commands.check(predicate)
+
+# Funciones de Saku_Registra
+async def buscar_hilo(canal, nombre_hilo):
+    for thread in canal.threads:
+        if thread.name.upper() == nombre_hilo.upper():
+            return thread
+
+    async for thread in canal.archived_threads(limit=50):
+        if thread.name.upper() == nombre_hilo.upper():
+            return thread
+    return None
+
+async def obtener_o_crear_hilo(canal, nombre):
+    hilo = await buscar_hilo(canal, nombre)
+    if hilo:
+        return hilo
+    hilo = await canal.create_thread(
+        name=nombre,
+        type=discord.ChannelType.public_thread
+    )
+    return hilo
+
+async def crear_registro_base(hilo):
+    texto = "📒 REGISTRO\n\n"
+    for i in range(100):
+        texto += f"> {i:02d} --\n"
+    mensaje = await hilo.send(texto)
+    await mensaje.pin()
+    return mensaje
+
+async def obtener_registro(hilo):
+    async for m in hilo.history(limit=10):
+        if m.author == bot.user and "00 --" in m.content:
+            return m
+    return await crear_registro_base(hilo)
 
 # Funciones de Saku_Status
 def barra(valor: str, ancho=40):
@@ -1368,6 +1409,75 @@ f"🎀━━━━━━━━━━━━━━━━━🎀"
 async def on_ready():
     revisar_asignaciones_atrasadas.start()
     print(f"✨ Bot en línea como {bot.user}")
+# Bloqueo global para registros
+registro_lock = asyncio.Lock()
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        await bot.process_commands(message)
+        return
+    # detectar canal registro
+    tipo_registro = None
+    for tipo, canales in CANALES_REGISTRO.items():
+        if message.channel.id in canales:
+            tipo_registro = tipo
+            break
+    if not tipo_registro:
+        await bot.process_commands(message)
+        return
+    # debe mencionar canal
+    if not message.channel_mentions:
+        return
+    canal_proyecto = message.channel_mentions[0]
+
+    # detectar número capítulo
+    match = re.search(r"\b(\d{1,3})\b", message.content)
+    if not match:
+        return
+    cap = int(match.group(1))
+    if cap > 99:
+        return
+
+    # nombre del hilo según tipo de registro
+    if tipo_registro == "regis-clean":
+        nombre_hilo = "LIMPIEZA"
+    elif tipo_registro == "regis-type":
+        nombre_hilo = "EDICIÓN"
+    elif tipo_registro == "regis-trad":
+        nombre_hilo = "TRADUCCIÓN"
+
+    # obtener hilo
+    hilo = await obtener_o_crear_hilo(canal_proyecto, nombre_hilo)
+    # obtener mensaje registro
+    registro = await obtener_registro(hilo)
+    fecha = datetime.now().strftime("%d-%b-%Y")
+
+    async with registro_lock:
+        lineas = registro.content.split("\n")
+        indice = cap + 2  # porque hay encabezado
+        # detectar si ya hay mención
+        if "<@" in lineas[indice]:
+            # formato duplicado
+            duplicado = f"⚠️ {cap:02d} -- {message.author.mention} *({fecha})* **(DUPLICADO)**"
+            if tipo_registro == "regis-trad":
+                idioma = re.search(r"\b[A-Z]{2,4}\b", message.content.upper())
+                if idioma:
+                    duplicado = f"⚠️ {cap:02d} -{idioma.group(0)}- {message.author.mention} *({fecha})* **(DUPLICADO)**"
+            # insertar duplicado justo debajo de la línea original
+            lineas.insert(indice + 1, duplicado)
+        else:
+            # registro normal
+            if tipo_registro == "regis-trad":
+                idioma = re.search(r"\b[A-Z]{2,4}\b", message.content.upper())
+                if idioma:
+                    lineas[indice] = f"- {cap:02d} -{idioma.group(0)}- {message.author.mention} *({fecha})*"
+                else:
+                    lineas[indice] = f"- {cap:02d} -- {message.author.mention} *({fecha})*"
+            else:
+                lineas[indice] = f"- {cap:02d} -- {message.author.mention} *({fecha})*"
+        # actualizar mensaje
+        await registro.edit(content="\n".join(lineas))
+    await bot.process_commands(message)
 
 async def enviar_recordatorio(
     guild,
