@@ -166,6 +166,8 @@ reaction_lock = asyncio.Lock()
 REACTION_COOLDOWN = 2  # segundos
 ASSIGN_COOLDOWN = 30  #lo bajé a 30s para que no se vea tan ofensivo
 last_assign_time = 0
+DRIVE_COOLDOWN = 45  # segundos
+last_drive_time = 0
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -311,6 +313,19 @@ async def check_assign_cooldown(ctx) -> bool:
         return False
     return True
 
+async def check_drive_cooldown(ctx) -> bool:
+    global last_drive_time
+    now = time.time()
+    remaining = DRIVE_COOLDOWN - (now - last_drive_time)
+
+    if remaining > 0:
+        await ctx.send(
+            f"⏳ SAKU_BOT está revisando otro proyecto por el momento.\n"
+            f"Por favor intenta de nuevo en **{int(remaining)} segundos** 💖"
+        )
+        return False
+    return True
+
 PROCESS_CONFIG = {
     "TRAD": {
         "status_col": 4,      # E
@@ -404,7 +419,10 @@ async def revisar_asignaciones_atrasadas():
 
 # Funciones de Saku_Drive 
 def authenticate():
-    SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+    SCOPES = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
 
     token_info = os.getenv("GOOGLE_TOKEN_JSON")
     if not token_info:
@@ -1510,6 +1528,10 @@ async def enviar_recordatorio(
 # Comando !drive
 @bot.command()
 async def drive(ctx):
+    global last_drive_time
+    if not await check_drive_cooldown(ctx):
+        return
+    last_drive_time = time.time()
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
 
@@ -2898,13 +2920,14 @@ async def check(ctx):
 
         # Construir mensaje final con mención de canal si aplica
         mensaje_final = f"👁️ {ctx.author.mention}, tus asignaciones para QC son las siguientes:\n"
-        for _, proyecto, capitulo in disponibles:
+        for idx, (_, proyecto, capitulo) in enumerate(disponibles):
+            letra = chr(65 + idx)  # 65 = 'A', 66 = 'B', etc.
             if proyecto.startswith("#"):
                 nombre_canal = proyecto[1:]
                 canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
                 if canal_discord:
                     proyecto = canal_discord.mention
-            mensaje_final += f" **CH. {capitulo}** -- {proyecto}\n"
+            mensaje_final += f"{letra}. CH. {capitulo} -- {proyecto}\n"
 
         mensaje_final += f" > Total de capítulos a revisar: **{len(disponibles)}**"
         mensaje_final += "\n > *Cuando termines, reacciona a esta asignación con un  💖*"
