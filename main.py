@@ -419,10 +419,7 @@ async def revisar_asignaciones_atrasadas():
 
 # Funciones de Saku_Drive 
 def authenticate():
-    SCOPES = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
     token_info = os.getenv("GOOGLE_TOKEN_JSON")
     if not token_info:
