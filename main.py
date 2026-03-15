@@ -424,9 +424,9 @@ def authenticate():
         "https://www.googleapis.com/auth/drive"
     ]
 
-    token_info = os.getenv("GOOGLE_TOKEN_JSON")
+    token_info = os.getenv("GOOGLE_TOKEN_DRIVE_JSON")
     if not token_info:
-        raise Exception("GOOGLE_TOKEN_JSON no encontrado en env")
+        raise Exception("GOOGLE_TOKEN_DRIVE_JSON no encontrado en env")
 
     creds = Credentials.from_authorized_user_info(
         json.loads(token_info),
