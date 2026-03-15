@@ -419,7 +419,10 @@ async def revisar_asignaciones_atrasadas():
 
 # Funciones de Saku_Drive 
 def authenticate():
-    SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+    SCOPES = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
 
     token_info = os.getenv("GOOGLE_TOKEN_JSON")
     if not token_info:
@@ -2924,7 +2927,7 @@ async def check(ctx):
                 canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
                 if canal_discord:
                     proyecto = canal_discord.mention
-            mensaje_final += f"{letra}. CH. {capitulo} -- {proyecto}\n"
+            mensaje_final += f" *{letra}.* **CH. {capitulo}** -- {proyecto}\n"
 
         mensaje_final += f" > Total de capítulos a revisar: **{len(disponibles)}**"
         mensaje_final += "\n > *Cuando termines, reacciona a esta asignación con un  💖*"
