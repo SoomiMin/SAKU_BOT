@@ -1515,15 +1515,29 @@ async def enviar_recordatorio(
         return
 
     mensaje_link = f"https://discord.com/channels/{guild.id}/{asign_channel_id}/{msg_id}"
-
-    await canal.send(
-        f"⏰ Hola {mention}\n"
-        f"Se te consulta sobre el capítulo **{capitulo}** ({proceso}).\n"
-        f"👉 {mensaje_link}\n"
-        f"Si ya lo completaste, reacciona {emoji}.\n"
-        f"Si no lo has comenzado, has alcanzado el plazo límite y el capítulo "
-        f"podrá ser reasignado."
+    embed = discord.Embed(
+        title="⏰ Recordatorio de capítulo",
+        description=(
+            f"## Hola {mention},\n\n"
+            f"Se te consulta sobre el capítulo **{capitulo}** -- *({proceso}).*"
+        ),
+        color=0xFFB6C1  # rosita 🌸
     )
+    embed.add_field(
+        name="Mensaje de asignación:",
+        value=f"╰┈➤ {mensaje_link}",
+        inline=False
+    )
+    embed.add_field(
+        name="Acción requerida:",
+        value=(
+            f"*Si ya lo completaste, reacciona con {emoji}.*\n"
+            f"*Si no lo has comenzado, has alcanzado el plazo límite y el capítulo podrá ser reasignado.*"
+        ),
+        inline=False
+    )
+    embed.set_footer(text="SAKU_BOT 🌸 ૮₍˶ᵔ ᵕ ᵔ˶ ₎ა")
+    await canal.send(embed=embed)
 
 # Comando !drive
 @bot.command()
