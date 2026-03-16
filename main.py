@@ -2319,8 +2319,8 @@ async def upraw(ctx):
         "`1` Coreano (KR)\n"
         "`2` Inglés (ING)\n"
         "`3` Bahasa Indonesia (INDO)\n"
-        "`4` Chino (CHIN)\n\n"
-        "Escribe solo el número."
+        "`4` Japonés (JAP)\n\n"
+        "*Escribe solo el número.*"
     )
 
     try:
@@ -2340,7 +2340,7 @@ async def upraw(ctx):
         1: ["1","0","0","0"], # KR
         2: ["0","1","0","0"], # ING
         3: ["0","0","1","0"], # INDO
-        4: ["0","0","0","1"], # CHIN
+        4: ["0","0","0","1"], # JAP
     }
 
     idioma_values = idioma_cols[idioma]
@@ -2497,7 +2497,7 @@ async def upraw(ctx):
     mensaje_final += "Todo quedó guardado en la hoja **ASIGNACIONES** 💖✨"
     await ctx.send(mensaje_final)
 
-# Comando !trad 
+# Comando !trad
 @bot.command()
 @canal_permitido("trad")
 async def trad(ctx):
@@ -2510,11 +2510,14 @@ async def trad(ctx):
         print(f"[ASSIGN] TRAD solicitado por {ctx.author.id}")
         await ctx.send(
             "🌐 *¿Qué idioma vas a trabajar?*\n"
-            "`1` Coreano (KR)\n"
-            "`2` Inglés (ING)\n"
-            "`3` Bahasa Indonesia (INDO)\n"
-            "`4` Chino (CHIN)\n\n"
-            "Escribe solo el número."
+            "> ### ✨ MANHWA | MANHUA ✨\n"
+            " ⤷ １ ► Coreano ⁽ ᴷᴿ ⁾\n"
+            " ⤷ ２ ► Inglés ⁽ ᴵᴺᴳ ⁾\n"
+            " ⤷ ３ ► Bahasa Indonesia ⁽ ᴵᴺᴰᴼ ⁾\n"
+            "> ### ✨ MANGA ✨\n"
+            " ⤷ ４ ► Inglés ⁽ ᴵᴺᴳ ⁾\n"
+            " ⤷ ５ ► Japonés ⁽ ᴶᴬᴾ ⁾\n\n"
+            "*Escribe solo el número.*"
         )
 
         def check(m):
@@ -2523,13 +2526,22 @@ async def trad(ctx):
         try:
             msg = await bot.wait_for("message", check=check, timeout=120)
             idioma = int(msg.content.strip())
-            if idioma not in [1,2,3,4]:
+            if idioma not in [1,2,3,4,5]:
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
 
-        # KR→H(8), ING→I(9), INDO→J(10), CHIN→K(11)
-        idioma_index = idioma + 7
+        # Definir columna de idioma
+        if idioma == 1:      # Coreano
+            idioma_index = 8
+        elif idioma == 2:    # Inglés
+            idioma_index = 9
+        elif idioma == 3:    # Indo
+            idioma_index = 10
+        elif idioma == 4:    # Inglés pero SOLO manga
+            idioma_index = 9
+        elif idioma == 5:    # Japonés
+            idioma_index = 11
         hoja = SHEET_NAME3
         # Leer hoja
         data = sheet.values().get(
@@ -2546,10 +2558,16 @@ async def trad(ctx):
         fila_normal = None
         for i in range(1, len(rows)):
             row = rows[i]
+
             raw = str(row[3]).strip()
             trad_status = str(row[4]).strip()
             idioma_flag = str(row[idioma_index - 1]).strip()
-            prioridad = str(row[17]).strip() if len(row) > 17 else "0"  # Col R
+            prioridad = str(row[17]).strip() if len(row) > 17 else "0"
+            proyecto_nombre = str(row[1]).lower()
+
+            # Filtro especial para manga en opción 4
+            if idioma == 4 and "manga" not in proyecto_nombre:
+                continue
 
             if raw == "1" and trad_status == "" and idioma_flag == "1":
                 if prioridad == "1" and fila_prioritaria is None:
@@ -2560,7 +2578,7 @@ async def trad(ctx):
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
 
         if fila_index is None:
-            return await ctx.send("❌ No hay capítulos disponibles en ese idioma, mi cielito.")
+            return await ctx.send("(っ˘̩╭╮˘̩)っ  No hay capítulos disponibles según tu especificación, dulzura.")
 
         proyecto = rows[fila_index][1]
         capitulo = rows[fila_index][2]
@@ -2637,6 +2655,23 @@ async def clean(ctx):
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] CLEAN solicitado por {ctx.author.id}")
+        await ctx.send(
+            "🌐 *¿Qué tipo de proyecto vas a limpiar?*\n"
+            "  ⤷ １ ► Manhwa | Manhua\n"
+            "  ⤷ ２ ► Manga\n\n"
+            "*Escribe solo el número.*"
+        )
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=120)
+            tipo = int(msg.content.strip())
+            if tipo not in [1,2]:
+                raise ValueError
+        except:
+            return await ctx.send("❌ Número inválido, amor.")
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A:X"
@@ -2652,6 +2687,14 @@ async def clean(ctx):
             raw = row[3]          # D
             clean_status = row[5] # F
             prioridad = row[17] if len(row) > 17 else "0"  # R
+            proyecto_nombre = str(row[1]).lower()
+
+            # Filtros por tipo
+            if tipo == 1 and "manga" in proyecto_nombre:
+                continue
+
+            if tipo == 2 and "manga" not in proyecto_nombre:
+                continue
 
             if raw == "1" and clean_status == "":
                 if prioridad == "1" and fila_prioritaria is None:
@@ -2661,7 +2704,7 @@ async def clean(ctx):
 
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
         if fila_index is None:
-            return await ctx.send("❌ No hay capítulos disponibles para CLEAN, mi cielito.")
+            return await ctx.send("(｡•́︿•̀｡) No hay capítulos disponibles según tu especificación, mi cielito.")
         proyecto = rows[fila_index][1]
         capitulo = rows[fila_index][2]
         # Mención del canal si aplica
@@ -2738,6 +2781,23 @@ async def type(ctx):
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
+        await ctx.send(
+            "🌐 *¿Qué tipo de proyecto vas a editar?*\n"
+            "  ⤷ １ ► Manhwa | Manhua\n"
+            "  ⤷ ２ ► Manga\n\n"
+            "*Escribe solo el número.*"
+        )
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=120)
+            tipo = int(msg.content.strip())
+            if tipo not in [1,2]:
+                raise ValueError
+        except:
+            return await ctx.send("❌ Número inválido, amor.")
         hoja = SHEET_NAME3
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
@@ -2748,11 +2808,20 @@ async def type(ctx):
         fila_normal = None
         for i in range(1, len(rows)):
             row = rows[i] + [""] * 24
+
             raw = row[3]           # D
             trad_status = row[4]   # E
             clean_status = row[5]  # F
             type_status = row[6]   # G
-            prioridad = row[17] if len(row) > 17 else "0"  # R
+            prioridad = row[17] if len(row) > 17 else "0"
+            proyecto_nombre = str(row[1]).lower()
+
+            # Filtro por tipo
+            if tipo == 1 and "manga" in proyecto_nombre:
+                continue
+
+            if tipo == 2 and "manga" not in proyecto_nombre:
+                continue
 
             if raw == "1" and trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
                 if prioridad == "1" and fila_prioritaria is None:
@@ -2762,7 +2831,7 @@ async def type(ctx):
 
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
         if fila_index is None:
-            return await ctx.send("❌ No hay capítulos disponibles para TYPE, terroncito.")
+            return await ctx.send("o(TヘTo)  No hay capítulos disponibles según tu especificación, terroncito.")
         proyecto = rows[fila_index][1]
         capitulo = rows[fila_index][2]
         # Mención del canal
