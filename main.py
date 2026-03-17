@@ -1537,7 +1537,10 @@ async def enviar_recordatorio(
         inline=False
     )
     embed.set_footer(text="SAKU_BOT 🌸 ૮₍˶ᵔ ᵕ ᵔ˶ ₎ა")
-    await canal.send(embed=embed)
+    await canal.send(
+        content=f" (╭ರ_•́) ||{mention}||",  # espacio con spoiler
+        embed=embed
+    )
 
 # Comando !drive
 @bot.command()
