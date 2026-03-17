@@ -2270,7 +2270,25 @@ async def update_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
         if vars_dict.get("LINK_COL"):
             await ctx.send("👇 **Previsualización COLORCITOS**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de colorcitos
-
+            
+        canal_real = vars_dict.get("CHANNEL_OBJ")
+        # 8) Anuncio automático en el canal del proyecto
+        try:
+            if canal_real:
+                embed = discord.Embed(
+                    title="(◡◕⏖◕)ᑐ🝐 ⠁⭒*.✩.*⭒⠁",
+                    description=(
+                        f"## 🌸 ¡Este proyecto ha sido actualizado!\nSe anuncia que se han subido los capítulos:\n"
+                        f"## **{cap_text}**\n\n"
+                        f"Los enlaces de lectura directos se encuentran en los **mensajes fijados del canal**.\n*Muchas gracias a todos los roles que participaron para culminar esta actualización.*"
+                    ),
+                    color=0xFFB6C1
+                )
+                embed.set_footer(text="ଘ(˵╹-╹)━☆⋆ ˚｡⋆୨୧˚ 🌸SAKU_BOT🌸 ˚୨୧⋆｡˚ ⋆")
+                await canal_real.send("### @everyone", embed=embed)
+        except Exception as e:
+            print("⚠ Error enviando anuncio al canal:", e)
+    
     except asyncio.TimeoutError:
         await ctx.send(f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`.")
     except Exception as e:
