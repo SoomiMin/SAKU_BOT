@@ -1516,7 +1516,7 @@ async def enviar_recordatorio(
 
     mensaje_link = f"https://discord.com/channels/{guild.id}/{asign_channel_id}/{msg_id}"
     embed = discord.Embed(
-        title="⏰ Recordatorio de capítulo",
+        title="⋆ ˖ ⏱︎.ᐟ ",
         description=(
             f"## Hola {mention},\n\n"
             f"Se te consulta sobre el capítulo **{capitulo}** -- *({proceso}).*"
