@@ -1,7 +1,7 @@
 import os, re, discord, asyncio, requests, time, json
 from discord.ext import commands
 from bs4 import BeautifulSoup
-from datetime import datetime, UTC
+from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
@@ -384,7 +384,7 @@ async def revisar_asignaciones_atrasadas():
         return
 
     rows = data.get("values", [])
-    now = datetime.now(UTC)
+    now = datetime.utcnow()
     guild = bot.get_guild(GUILD_IDS[1])
 
     if not guild:
