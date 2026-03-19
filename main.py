@@ -151,6 +151,22 @@ def barra(valor: str, ancho=40):
         barras += "|"
     return barras.ljust(ancho)
 
+def recortar_proyecto(nombre):
+    nombre = nombre.strip()
+
+    if not nombre:
+        return nombre
+
+    if nombre.startswith("#"):
+        partes = nombre.split("-", 1)
+        if len(partes) > 1:
+            numero = partes[0]
+            resto = partes[1].split("-")[0]
+            return f"{numero}-{resto}"
+        return nombre
+    else:
+        return nombre.split("-")[0]
+
 # Funciones de Saku_Asigna 
 # Memoria temporal para todos los procesos
 assignments: Dict[int, Dict[str, Any]] = {}
@@ -2309,9 +2325,9 @@ async def upraw(ctx):
 
     # 1️⃣ — PEDIR CANAL/PROYECTO
     try:
-        msg = await bot.wait_for("message", check=check, timeout=120)
+        msg = await bot.wait_for("message", check=check, timeout=30)
     except asyncio.TimeoutError:
-        return await ctx.send("⏳ Se acabó el tiempo, mi amor. Intenta de nuevo 💗")
+        return await ctx.send("⏳ Se acabó el tiempo, mi amor. El proceso ha sido cancelado 💔")
 
 #    proyecto = msg.content.strip()
     content = msg.content.strip()
@@ -2333,14 +2349,14 @@ async def upraw(ctx):
     try:
         msg2 = await bot.wait_for("message", check=check, timeout=180)
     except asyncio.TimeoutError:
-        return await ctx.send("⏳ Se acabó el tiempo, corazón. Inténtalo otra vez 🥺")
+        return await ctx.send("⏳ Se acabó el tiempo, corazón. El proceso ha sido cancelado 🥺")
 
     # Convertir a lista de capítulos
     caps_text = msg2.content.strip()
     try:
         capitulos = [int(x) for x in caps_text.split()]
     except:
-        return await ctx.send("❌ **Formato inválido.** Deben ser números separados por espacio.")
+        return await ctx.send("❌ **Formato inválido.** Deben ser números separados por espacio. El proceso ha sido cancelado 💔")
 
     if len(capitulos) == 0:
         return await ctx.send("❌ No enviaste capítulos, amor.")
@@ -2351,31 +2367,31 @@ async def upraw(ctx):
     # 3️⃣ — PREGUNTAR IDIOMA
     await ctx.send(
         "🌐 **¿En qué idioma están estas raws?**\n"
-        "`1` Coreano (KR)\n"
-        "`2` Inglés (ING)\n"
-        "`3` Bahasa Indonesia (INDO)\n"
-        "`4` Japonés (JAP)\n\n"
-        "*Escribe solo el número.*"
+        " ⤷ １ ► Coreano ⁽ ᴷᴿ ⁾\n"
+        " ⤷ ２ ► Inglés ⁽ ᴵᴺᴳ ⁾\n"
+        " ⤷ ３ ► Bahasa Indonesia ⁽ ᴵᴺᴰᴼ ⁾\n"
+        " ⤷ ４ ► Japonés ⁽ ᴶᴬᴾ ⁾\n\n"
+        "*Escribe solo el número.*" 
     )
 
     try:
         msg3 = await bot.wait_for("message", check=check, timeout=120)
     except asyncio.TimeoutError:
-        return await ctx.send("⏳ Se acabó el tiempo, vida. Vuelve a intentarlo 💞")
+        return await ctx.send("⏳ Se acabó el tiempo, vida. El proceso se ha cancelado 💞")
 
     try:
         idioma = int(msg3.content.strip())
         if idioma not in [1, 2, 3, 4]:
             raise ValueError
     except:
-        return await ctx.send("❌ Número inválido. Debe ser 1,2,3 o 4.")
+        return await ctx.send("❌ Número inválido. Debe ser 1,2,3 o 4. El proceso se ha cancelado 💔")
 
     # Mapeo de idioma → columna
     idioma_cols = {
         1: ["1","0","0","0"], # KR
         2: ["0","1","0","0"], # ING
         3: ["0","0","1","0"], # INDO
-        4: ["0","0","0","1"], # JAP
+        4: ["0","0","0","1"], # CHIN
     }
 
     idioma_values = idioma_cols[idioma]
@@ -2388,11 +2404,13 @@ async def upraw(ctx):
     )
 
     try:
-        msg_sep = await bot.wait_for("message", check=check, timeout=120)
+        msg_sep = await bot.wait_for("message", check=check, timeout=10)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Se acabó el tiempo, mi cielo.")
 
     separar_roles = msg_sep.content.strip()
+    if separar_roles not in ["0", "1"]:
+        return await ctx.send("❌ Debes escribir `1` o `0`.")
 
     trad_apartado = ""
     clean_apartado = ""
@@ -2402,11 +2420,14 @@ async def upraw(ctx):
     if separar_roles == "1":
 
         await ctx.send(
-            "✏️ **Escribe en orden qué roles separas:**\n"
-            "`TRAD CLEAN TYPE`\n"
-            "Ejemplo: `1 0 0`"
+            "✏️ **Escribe en orden qué roles separas:** ~~ROL SEPARADO~~ / ROL DISPONIBLE PARA ASIGNACIÓN\n"
+            "`1 0 0` -- ~~TRAD~~ | **CLEAN** | **TYPE**\n"
+            "`1 1 0` -- ~~TRAD~~ | ~~CLEAN~~ | **TYPE**\n"
+            "`0 1 0` -- **TRAD** | ~~CLEAN~~ | **TYPE**\n"
+            "`0 1 1` -- **TRAD** | ~~CLEAN~~ | ~~TYPE~~\n"
+            "`0 0 1` -- **TRAD** | **CLEAN** | ~~TYPE~~\n"
+            "No puede ser `0 0 0` ni `1 1 1`.\n"
         )
-
         while True:
             try:
                 msg_roles = await bot.wait_for("message", check=check, timeout=120)
@@ -2422,7 +2443,6 @@ async def upraw(ctx):
 
                 total_bloqueados = int(r_trad) + int(r_clean) + int(r_type)
 
-                # ❌ No puede ser 0 ni 3
                 if total_bloqueados == 0 or total_bloqueados == 3:
                     await ctx.send(
                         "⚠️ Debes bloquear al menos 1 rol y máximo 2.\n"
@@ -2433,7 +2453,11 @@ async def upraw(ctx):
 
                 break  # todo válido
 
-            except:
+            except asyncio.TimeoutError:
+                await ctx.send("⏳ Se acabó el tiempo para elegir roles. El proceso ha sido cancelado 💔")
+                return  # 🔥 IMPORTANTE: salir del comando
+
+            except ValueError:
                 await ctx.send("❌ Formato inválido. Escribe algo como: `1 0 0`")
 
         # Marcar como APARTADO
@@ -2469,8 +2493,13 @@ async def upraw(ctx):
         except asyncio.TimeoutError:
             return await ctx.send("⏳ Se acabó el tiempo mi amorcito 😿")
 
-        prioridad = "1" if msg4.content.strip() == "1" else "0"
-    
+        resp = msg4.content.strip()
+
+        if resp not in ["0", "1"]:
+            return await ctx.send("❌ Debes escribir `1` o `0`. El proceso ha sido cancelado 💔")
+
+        prioridad = resp
+
     # 5 — LEER HOJA PARA SABER EL SIGUIENTE ÍTEM
     hoja = SHEET_NAME3
     existing = sheet.values().get(
@@ -3314,6 +3343,219 @@ async def ficha_cmd(ctx: commands.Context):
     except Exception as e:
         print("Error en !ficha:", e)
         await ctx.send(f"*❌ Ocurrió un error inesperado: {e}*")
-    
+
+
+# Comando !scan
+@bot.command()
+@rol_permitido("status")
+async def scan(ctx):
+    await ctx.send("🔍 Escaneando asignaciones activas...")
+
+    hoja = SHEET_NAME3
+
+    try:
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:Y"
+        ).execute()
+    except Exception as e:
+        return await ctx.send(f"❌ Error leyendo la hoja:\n{e}")
+
+    rows = data.get("values", [])
+
+    for i in range(len(rows)):
+        rows[i] += [""] * (24 - len(rows[i]))
+
+    tabla = []
+    errores = []
+
+    headers = ["COOR", "USER", "ROL", "PROYECTO", "CAP"]
+
+    for i in range(1, len(rows)):
+        row = rows[i]
+
+        proyecto = recortar_proyecto(row[1])[:15]
+        capitulo = row[2]
+
+        trad = str(row[4]).strip().upper()
+        clean = str(row[5]).strip().upper()
+        type_ = str(row[6]).strip().upper()
+
+        user_trad = row[11].split("/")[0] if row[11] else ""
+        user_clean = row[12].split("/")[0] if row[12] else ""
+        user_type = row[13].split("/")[0] if row[13] else ""
+
+        user_trad = user_trad[:10]
+        user_clean = user_clean[:10]
+        user_type = user_type[:10]
+
+        # 🟡 TRAD
+        if trad == "ASIGNADO":
+            tabla.append([
+                f"{i+1}E",
+                user_trad,
+                "TRAD",
+                proyecto,
+                capitulo
+            ])
+
+        # 🔵 CLEAN
+        if clean == "ASIGNADO":
+            if trad != "COMPLETADO":
+                errores.append(f"{i+1}F CLEAN sin TRAD completo")
+
+            tabla.append([
+                f"{i+1}F",
+                user_clean,
+                "CLEAN",
+                proyecto,
+                capitulo
+            ])
+
+        # 🟣 TYPE
+        if type_ == "ASIGNADO":
+            if trad != "COMPLETADO" or clean != "COMPLETADO":
+                errores.append(f"{i+1}G TYPE sin flujo completo")
+
+            tabla.append([
+                f"{i+1}G",
+                user_type,
+                "TYPE",
+                proyecto,
+                capitulo
+            ])
+
+    if not tabla:
+        return await ctx.send("✅ No hay asignaciones activas 😌")
+
+    # 🔥 ORDEN: TRAD → CLEAN → TYPE → CAP
+    orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
+    tabla.sort(key=lambda x: (orden_rol[x[2]], int(x[4] or 0)))
+
+    # calcular ancho columnas
+    all_rows = [headers] + tabla
+    col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
+
+    def make_separator():
+        return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
+
+    def make_row(row):
+        return "| " + " | ".join(str(row[i]).ljust(col_widths[i]) for i in range(len(row))) + " |"
+
+    lines = []
+    lines.append(make_separator())
+    lines.append(make_row(headers))
+    lines.append(make_separator())
+
+    for row in tabla:
+        lines.append(make_row(row))
+        lines.append(make_separator())
+
+    # 🔴 AGREGAR ERRORES AL FINAL
+    if errores:
+        lines.append("")
+        lines.append("⚠️ ERRORES DETECTADOS")
+        for e in errores:
+            lines.append(f"- {e}")
+
+    texto = "\n".join(lines)
+
+    chunks = [texto[i:i+1900] for i in range(0, len(texto), 1900)]
+
+    for chunk in chunks:
+        await ctx.send(f"```{chunk}```")
+
+    await ctx.send(f"✨ Total encontrados: **{len(tabla)}**")
+
+@bot.command()
+@rol_permitido("status")
+async def editar(ctx, coordenada: str):
+    coordenada = coordenada.upper().strip()
+
+    # Validar formato
+    match = re.match(r"(\d+)([A-Z])", coordenada)
+    if not match:
+        return await ctx.send("❌ Formato inválido. Usa algo como `630E`")
+
+    fila = int(match.group(1))
+    col_letra = match.group(2)
+
+    hoja = SHEET_NAME3
+
+    # Determinar proceso según columna
+    proceso_map = {
+        "E": "TRAD",
+        "F": "CLEAN",
+        "G": "TYPE"
+    }
+
+    if col_letra not in proceso_map:
+        return await ctx.send("❌ Solo puedes editar columnas E, F o G")
+
+    proceso = proceso_map[col_letra]
+
+    await ctx.send(
+        f"⚙️ **Editar {coordenada} ({proceso})**\n\n"
+        "1️⃣ COMPLETAR\n"
+        "2️⃣ LIMPIAR\n\n"
+        "Responde con `1` o `2`"
+    )
+
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for("message", check=check, timeout=30)
+    except asyncio.TimeoutError:
+        return await ctx.send("⏳ Tiempo agotado.")
+
+    opcion = msg.content.strip()
+
+    # -------------------------
+    # 1️⃣ COMPLETAR
+    # -------------------------
+    if opcion == "1":
+        try:
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!{col_letra}{fila}",
+                valueInputOption="RAW",
+                body={"values": [["COMPLETADO"]]}
+            ).execute()
+
+            await ctx.send(f"✅ {coordenada} marcado como COMPLETADO")
+        except Exception as e:
+            await ctx.send(f"❌ Error:\n{e}")
+
+    # -------------------------
+    # 2️⃣ LIMPIAR
+    # -------------------------
+    elif opcion == "2":
+
+        # Configuración por proceso
+        limpiar_map = {
+            "TRAD": ["E", "L", "O", "S", "V", "Y"],
+            "CLEAN": ["F", "M", "P", "T", "W", "Y"],
+            "TYPE": ["G", "N", "Q", "U", "X", "Y"]
+        }
+
+        columnas = limpiar_map[proceso]
+
+        try:
+            for col in columnas:
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{hoja}!{col}{fila}",
+                    valueInputOption="RAW",
+                    body={"values": [[""]]}
+                ).execute()
+
+            await ctx.send(f"🧹 {coordenada} limpiado correctamente ({proceso})")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error al limpiar:\n{e}")
+
+    else:
+        await ctx.send("❌ Opción inválida. Usa `1` o `2`")
 # Ejecutar bot
 bot.run(TOKEN)
