@@ -1,7 +1,7 @@
 import os, re, discord, asyncio, requests, time, json
 from discord.ext import commands
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
@@ -54,6 +54,7 @@ SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
+SHEET_NAME5 = os.getenv("SHEET_NAME5")
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
@@ -3450,14 +3451,6 @@ async def scan(ctx):
     for row in tabla:
         lines.append(make_row(row))
         lines.append(make_separator())
-
-    # 🔴 AGREGAR ERRORES AL FINAL
-    if errores:
-        lines.append("")
-        lines.append("⚠️ ERRORES DETECTADOS")
-        for e in errores:
-            lines.append(f"- {e}")
-
     texto = "\n".join(lines)
 
     chunks = [texto[i:i+1900] for i in range(0, len(texto), 1900)]
@@ -3467,6 +3460,7 @@ async def scan(ctx):
 
     await ctx.send(f"✨ Total encontrados: **{len(tabla)}**")
 
+# Comando !editar
 @bot.command()
 @rol_permitido("status")
 async def editar(ctx, coordenada: str):
@@ -3495,10 +3489,11 @@ async def editar(ctx, coordenada: str):
     proceso = proceso_map[col_letra]
 
     await ctx.send(
-        f"⚙️ **Editar {coordenada} ({proceso})**\n\n"
-        "1️⃣ COMPLETAR\n"
-        "2️⃣ LIMPIAR\n\n"
-        "Responde con `1` o `2`"
+        f"⚙️ **Editar {coordenada} ({proceso})**\n"
+        " ⤷ １ ► Completar asignación *(detiene a SAKU_REMINDER)*\n"
+        " ⤷ ２ ► Limpiar asignación *(libera la asignación para alguien más la tome)*\n"
+        " ⤷ ３ ► Suspender capítulo de la plantilla por MALA RAW\n"
+        "Responde con `1`, `2` o `3`"
     )
 
     def check(m):
@@ -3510,10 +3505,7 @@ async def editar(ctx, coordenada: str):
         return await ctx.send("⏳ Tiempo agotado.")
 
     opcion = msg.content.strip()
-
-    # -------------------------
-    # 1️⃣ COMPLETAR
-    # -------------------------
+#COMPLETAR
     if opcion == "1":
         try:
             sheet.values().update(
@@ -3523,13 +3515,10 @@ async def editar(ctx, coordenada: str):
                 body={"values": [["COMPLETADO"]]}
             ).execute()
 
-            await ctx.send(f"✅ {coordenada} marcado como COMPLETADO")
+            await ctx.send(f"✅ **{coordenada}** - **({proceso})** ha sido completado correctamente.")
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
-
-    # -------------------------
-    # 2️⃣ LIMPIAR
-    # -------------------------
+#LIMPIAR
     elif opcion == "2":
 
         # Configuración por proceso
@@ -3550,12 +3539,145 @@ async def editar(ctx, coordenada: str):
                     body={"values": [[""]]}
                 ).execute()
 
-            await ctx.send(f"🧹 {coordenada} limpiado correctamente ({proceso})")
+            await ctx.send(f"🧹 **{coordenada}** - **({proceso})** ha sido liberado correctamente.")
 
         except Exception as e:
             await ctx.send(f"❌ Error al limpiar:\n{e}")
+#SUSPENDER
+    elif opcion == "3":
+        try:
+            # Marcar RAW como mala
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!D{fila}",
+                valueInputOption="RAW",
+                body={"values": [["0 - MALA RAW"]]}
+            ).execute()
 
-    else:
-        await ctx.send("❌ Opción inválida. Usa `1` o `2`")
+            # 🔥 BONUS: limpiar también la asignación actual
+            limpiar_map = {
+                "TRAD": ["E", "L", "O", "S", "V", "Y"],
+                "CLEAN": ["F", "M", "P", "T", "W", "Y"],
+                "TYPE": ["G", "N", "Q", "U", "X", "Y"]
+            }
+
+            for col in limpiar_map[proceso]:
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{hoja}!{col}{fila}",
+                    valueInputOption="RAW",
+                    body={"values": [[""]]}
+                ).execute()
+
+            await ctx.send(f"⛔ Capítulo **{coordenada}** ha sido suspendido correctamente.")
+
+        except Exception as e:
+            await ctx.send(f"❌ Error:\n{e}")
+            
+# Comando !asignación_larga
+@bot.command(name="asset")
+@rol_permitido("table")  # puedes cambiar el permiso
+async def asset(ctx):
+
+    if not ctx.message.mentions:
+        return await ctx.send("❌ Formato incorrecto.\nEjemplo:\n!asignación_larga -- @user -- #canal -- 1 2 3 -- TRAD -- 4")
+
+    user = ctx.message.mentions[0]
+
+    args = ctx.message.content.split("--")
+
+    if len(args) < 6:
+        return await ctx.send("❌ Formato incorrecto.\nEjemplo:\n!asignación_larga -- @user -- #canal -- 1 2 3 -- TRAD -- 4")
+
+    canal_txt = args[2].strip()
+    caps_txt = args[3].strip()
+    rol_txt = args[4].strip().upper()
+    dias_txt = args[5].strip()
+
+    # 📌 Canal
+    canal = None
+
+    # Detectar mención tipo <#123456789>
+    match = re.search(r"<#(\d+)>", canal_txt)
+    if match:
+        canal_id = int(match.group(1))
+        canal = ctx.guild.get_channel(canal_id)
+
+    if not canal:
+        return await ctx.send("❌ Canal no encontrado.")
+
+    # 📌 Dar acceso si no tiene
+    if user not in canal.members:
+        try:
+            await canal.set_permissions(user, read_messages=True, send_messages=True)
+        except:
+            pass
+
+    # 📌 Capítulos
+    caps = caps_txt.split()
+
+    # 📌 Rol
+    rol_base = "TRAD" if "TRAD" in rol_txt else "CLEAN" if "CLEAN" in rol_txt else "TYPE"
+
+    rol_col_map = {
+        "TRAD": 3,
+        "CLEAN": 4,
+        "TYPE": 5
+    }
+
+    rol_index = rol_col_map[rol_base]
+
+    # 📌 Tiempo
+    dias = int(dias_txt)
+
+    fecha_asignacion = datetime.utcnow()
+    fecha_entrega = fecha_asignacion + timedelta(days=dias)
+
+    # 📌 Leer hoja
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{SHEET_NAME5}!A:H"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    last_item = len(rows)
+
+    nuevos = []
+
+    for i, cap in enumerate(caps):
+        fila = [""] * 8
+
+        fila[0] = last_item + i      # Item
+        fila[1] = recortar_proyecto(f"#{canal.name}")
+        fila[2] = cap               # Capítulo
+        fila[rol_index] = f"@{user.display_name}"
+        fila[6] = fecha_asignacion.strftime("%Y-%m-%d")
+        fila[7] = fecha_entrega.strftime("%Y-%m-%d")
+
+        nuevos.append(fila)
+
+    # 📌 Escribir en sheet
+    sheet.values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{SHEET_NAME5}!A:H",
+        valueInputOption="RAW",
+        body={"values": nuevos}
+    ).execute()
+
+    # 📢 Mensaje bonito
+    caps_str = "-".join(caps)
+
+    await canal.send(
+        f"------------------------------------\n"
+        f"(っ◔◡◔)っ Asignación larga para {user.mention}\n"
+        f"## {rol_txt} -- {caps_str}\n"
+        f"Se entrega en {dias} días.\n"
+        f"> *Si no tienes acceso al drive, solicítalo.*\n"
+        f"> *Si entregas antes, avisa a @QC|@ADMIN para continuar con el proceso.*\n"
+        f"------------------------------------"
+    )
+
+    await ctx.send("✅ Asignación larga registrada correctamente.")
 # Ejecutar bot
 bot.run(TOKEN)
