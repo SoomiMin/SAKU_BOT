@@ -55,6 +55,7 @@ SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
 SHEET_NAME5 = os.getenv("SHEET_NAME5")
+ROL_NEWBIE = 1483529826253148201
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
@@ -373,6 +374,49 @@ PROCESS_CONFIG = {
     }
 }
 
+def format_cap(cap):
+    if cap.is_integer():
+        return str(int(cap))
+    return str(cap)
+
+async def contar_caps_usuario(user_id: int, proceso: str) -> int:
+    hoja = SHEET_NAME3
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{hoja}!A:N"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    count = 0
+
+    # Columnas según proceso
+    col_map = {
+        "TRAD": 11,   # L
+        "CLEAN": 12,  # M
+        "TYPE": 13    # N
+    }
+
+    col_index = col_map.get(proceso)
+    for i in range(1, len(rows)):
+        row = rows[i] + [""] * 14
+        usuario = str(row[col_index]).strip()
+
+        if str(user_id) in usuario:
+            count += 1
+
+    return count
+
+def obtener_mensaje_newbie(progreso: int) -> str:
+    mensajes = {
+        1: "🥚 ¡Eres un huevito apenas rompiendo el cascarón, tú puedes!",
+        2: "🐣 ¡Si pudiste con el primero, puedes con este, sigue adelante!",
+        3: "🌱 ¡Ya en ombliguito del proceso, vámonos!",
+        4: "🔥 ¡Mira cuán lejos has llegado, sigue firme!",
+        5: "🎓 ¡Ya estás listo para dejar el nido, soy lloros!"
+    }
+    return mensajes.get(progreso, "")
+        
 @tasks.loop(minutes=40)
 async def revisar_asignaciones_atrasadas():
     try:
@@ -2314,7 +2358,7 @@ async def update_cmd(ctx: commands.Context):
     except Exception as e:
         print("Error en comando !update:", e)
         await ctx.send(f"❌ Ocurrió un error inesperado: {e}")
-
+        
 # Comando !upraw
 @bot.command()
 @rol_permitido("upraw")
@@ -2355,9 +2399,9 @@ async def upraw(ctx):
     # Convertir a lista de capítulos
     caps_text = msg2.content.strip()
     try:
-        capitulos = [int(x) for x in caps_text.split()]
+        capitulos = [float(x) for x in caps_text.split()]
     except:
-        return await ctx.send("❌ **Formato inválido.** Deben ser números separados por espacio. El proceso ha sido cancelado 💔")
+        return await ctx.send("❌ **Formato inválido.** Usa números como `12 13  / 31.1 31.2` 💔")
 
     if len(capitulos) == 0:
         return await ctx.send("❌ No enviaste capítulos, amor.")
@@ -2520,7 +2564,7 @@ async def upraw(ctx):
         fila = [
             str(item_num),      # A — Item
             proyecto,           # B — Proyecto
-            str(cap),           # C — Capítulo
+            format_cap(cap),    # C — Capítulo
             "1",                # D — RAW
             trad_apartado,    # E — TRAD
             clean_apartado,   # F — CLEAN
@@ -2573,6 +2617,18 @@ async def trad(ctx):
         last_assign_time = time.time()
 
         print(f"[ASSIGN] TRAD solicitado por {ctx.author.id}")
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
+        progreso_actual = 0
+
+        if es_newbie:
+            progreso_actual = await contar_caps_usuario(ctx.author.id, "TRAD")
+
+            if progreso_actual >= 5:
+                return await ctx.send(
+                    f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
+                    f"Has completado las asignaciones adaptativas.\n"
+                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                )
         await ctx.send(
             "🌐 *¿Qué idioma vas a trabajar?*\n"
             "> ### ✨ MANHWA | MANHUA ✨\n"
@@ -2586,8 +2642,7 @@ async def trad(ctx):
         )
 
         def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel
-
+            return m.author == ctx.author and m.channel == ctx.channel        
         try:
             msg = await bot.wait_for("message", check=check, timeout=120)
             idioma = int(msg.content.strip())
@@ -2617,7 +2672,6 @@ async def trad(ctx):
         # Asegurarse de que todas las filas tengan al menos 24 columnas
         for i in range(len(rows)):
             rows[i] += [""] * (24 - len(rows[i]))
-
         # Buscar fila
         fila_prioritaria = None
         fila_normal = None
@@ -2654,9 +2708,22 @@ async def trad(ctx):
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto = canal_discord.mention
+
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
+        extra_msg = ""
+
+        if es_newbie:
+            progreso = min(progreso_actual + 1, 5)
+            mensaje_extra = obtener_mensaje_newbie(progreso)
+
+            extra_msg = (
+                f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
+                f"{mensaje_extra}\n"
+            )
         # Enviar la asignación
         asignacion_msg = await ctx.send(
             f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
+            f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
             f" > - *Consulta a QC sobre como se expresan los personajes según proyecto.*\n "
@@ -2720,6 +2787,18 @@ async def clean(ctx):
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] CLEAN solicitado por {ctx.author.id}")
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
+        progreso_actual = 0
+
+        if es_newbie:
+            progreso_actual = await contar_caps_usuario(ctx.author.id, "CLEAN")
+
+            if progreso_actual >= 5:
+                return await ctx.send(
+                    f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
+                    f"Has completado las asignaciones adaptativas.\n"
+                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                )
         await ctx.send(
             "🌐 *¿Qué tipo de proyecto vas a limpiar?*\n"
             "  ⤷ １ ► Manhwa | Manhua\n"
@@ -2778,9 +2857,20 @@ async def clean(ctx):
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto = canal_discord.mention
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
+        extra_msg = ""
+        if es_newbie:
+            progreso = min(progreso_actual + 1, 5)
+            mensaje_extra = obtener_mensaje_newbie(progreso)
+
+            extra_msg = (
+                f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
+                f"{mensaje_extra}\n"
+            )
         # Enviar mensaje de asignación
         asignacion_msg = await ctx.send(
             f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
+            f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa !drive para revisar si el capítulo existe o no.*\n "
             f" > - *Recuerde colocar las marcas de agua adecuadamente.*\n "
@@ -2846,6 +2936,18 @@ async def type(ctx):
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
+        progreso_actual = 0
+
+        if es_newbie:
+            progreso_actual = await contar_caps_usuario(ctx.author.id, "TYPE")
+
+            if progreso_actual >= 5:
+                return await ctx.send(
+                    f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
+                    f"Has completado las asignaciones adaptativas.\n"
+                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                )
         await ctx.send(
             "🌐 *¿Qué tipo de proyecto vas a editar?*\n"
             "  ⤷ １ ► Manhwa | Manhua\n"
@@ -2905,9 +3007,20 @@ async def type(ctx):
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto = canal_discord.mention
+        es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)            
         ROL_TYPE_QC = 1463686138689622250
         tiene_doble_rol = any(role.id == ROL_TYPE_QC for role in ctx.author.roles)
 
+        
+        extra_msg = ""
+        if es_newbie and not tiene_doble_rol:
+            progreso = min(progreso_actual + 1, 5)
+            mensaje_extra = obtener_mensaje_newbie(progreso)
+
+            extra_msg = (
+                f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
+                f"{mensaje_extra}\n"
+            )
         if tiene_doble_rol:
             asignacion_msg = await ctx.send(
                 f"🎨+👁️ <@{ctx.author.id}>, tu asignación **TYPE/QC** es {proyecto} - **capítulo {capitulo}**.\n"
@@ -2920,6 +3033,7 @@ async def type(ctx):
         else:
             asignacion_msg = await ctx.send(
                 f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
+                f"{extra_msg}"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
                 f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
@@ -2980,7 +3094,6 @@ async def type(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
-
 # Comando !check
 @bot.command()
 @canal_permitido("check")
