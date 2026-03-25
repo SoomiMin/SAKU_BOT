@@ -2726,6 +2726,7 @@ async def trad(ctx):
             f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
             f" > - *Consulta a QC sobre como se expresan los personajes según proyecto.*\n "
             f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
         )
@@ -2873,6 +2874,7 @@ async def clean(ctx):
             f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
             f" > - *Recuerde colocar las marcas de agua adecuadamente.*\n "
             f" > - *Las tiras completadas deben ser entregadas en formato JPG.*\n "
             f" > - *Cuando termines, reacciona con 🔵 para marcarlo como completado.*\n\n"
@@ -3026,6 +3028,7 @@ async def type(ctx):
                 f"🎨+👁️ <@{ctx.author.id}>, tu asignación **TYPE/QC** es {proyecto} - **capítulo {capitulo}**.\n"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *En tu caso, apóyanos realizando su respectivo QC y WEBP.*\n "
                 f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
@@ -3036,6 +3039,7 @@ async def type(ctx):
                 f"{extra_msg}"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
             )
