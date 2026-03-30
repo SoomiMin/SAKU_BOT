@@ -1765,38 +1765,43 @@ async def sitio(ctx):
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
 
     await ctx.send("🔍 Buscando enlaces de proyecto en los mensajes fijados...")
-    pinned = await ctx.channel.pins()
-    encontrados = False
+    pins_data = await read_channel_pins(ctx.channel)
+
     tasks = []
+    task_map = {}  # para saber qué resultado pertenece a qué sitio
 
-    for msg in pinned:
-        pre_eter = "Eternal: 00" in msg.content
-        pre_lec = "Lector: 00" in msg.content
-        pre_cath = "Catharsis: 00" in msg.content
-        pre_col = "Colorcito: 00" in msg.content
+    # --- CATHARSIS ---
+    if pins_data["LINK_CATH"]:
+        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"]))
+        task_map[len(tasks)-1] = "catharsis"
+    else:
+        task_map["catharsis"] = "ND"
 
-        match_eter = re.search(r"https?://(?:www\.)?eternalmangas\.org/[^\s>]+", msg.content)
-        match_lec = re.search(r"https?://(?:www\.)?lectorjpg\.com/series/[^\s>]+", msg.content)
-        match_cath = re.search(r"https?://(?:www\.)?catharsisworld\.[^/]+/[^\s>]+", msg.content)
-        match_col = re.search(r"https?://(?:www\.)?colorcitoscan\.com/[^\s>]+", msg.content)
+    # --- ETERNAL ---
+    if pins_data["LINK_ETER"]:
+        tasks.append(asyncio.to_thread(evento_eter, pins_data["LINK_ETER"]))
+        task_map[len(tasks)-1] = "eternal"
+    else:
+        task_map["eternal"] = "ND"
 
-        if match_eter:
-            encontrados = True
-            tasks.append(asyncio.to_thread(evento_eter, match_eter.group(0), preestreno=pre_eter))
-        if match_lec:
-            encontrados = True
-            tasks.append(asyncio.to_thread(evento_lec, match_lec.group(0), preestreno=pre_lec))
-        if match_cath:
-            encontrados = True
-            tasks.append(asyncio.to_thread(evento_cath, match_cath.group(0), preestreno=pre_cath))
-        if match_col:
-            encontrados = True
-            tasks.append(asyncio.to_thread(evento_col, match_col.group(0), preestreno=pre_col))
+    # --- LECTOR ---
+    if pins_data["LINK_LEC"]:
+        tasks.append(asyncio.to_thread(evento_lec, pins_data["LINK_LEC"]))
+        task_map[len(tasks)-1] = "lector"
+    else:
+        task_map["lector"] = "ND"
 
-    if not encontrados:
+    # --- COLORCITO ---
+    if pins_data["LINK_COL"]:
+        tasks.append(asyncio.to_thread(evento_col, pins_data["LINK_COL"]))
+        task_map[len(tasks)-1] = "col"
+    else:
+        task_map["col"] = "ND"
+
+    if not tasks:
         embed = discord.Embed(
             title="🌸 Saku_Search — *Sin enlaces encontrados*",
-            description="No hay enlaces válidos de Eternal|LectorJPG|Catharsis|Colorcito en los mensajes fijados.",
+            description="No hay enlaces válidos en los mensajes fijados.",
             color=0xF8C8DC
         )
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
@@ -1804,54 +1809,74 @@ async def sitio(ctx):
 
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Diccionario con todas las columnas separadas
     resultado_dict = {
-        "catharsis_cap": "N/A",
-        "catharsis_date": "N/A",
-        "eternal_cap": "N/A",
-        "eternal_date": "N/A",
-        "lector_cap": "N/A",
-        "lector_date": "N/A",
-        "col_cap": "N/A",
-        "col_date": "N/A"
+        "catharsis_cap": "N/D",
+        "catharsis_date": "N/D",
+        "eternal_cap": "N/D",
+        "eternal_date": "N/D",
+        "lector_cap": "N/D",
+        "lector_date": "N/D",
+        "col_cap": "N/D",
+        "col_date": "N/D"
     }
 
-    for res in resultados:
+    # --- Procesar resultados reales ---
+    for i, res in enumerate(resultados):
+        sitio = task_map.get(i)
+        if not sitio:
+            continue
+
         if isinstance(res, Exception):
-            embed = discord.Embed(
-                title="⚠ Error en búsqueda",
-                description=str(res),
-                color=0xE74C3C
-            )
-            await ctx.send(embed=embed)
+            continue
+
+        if isinstance(res, str) and res.startswith("❌"):
+            if sitio == "catharsis":
+                resultado_dict["catharsis_cap"] = "N/A"
+                resultado_dict["catharsis_date"] = "N/A"
+            elif sitio == "eternal":
+                resultado_dict["eternal_cap"] = "N/A"
+                resultado_dict["eternal_date"] = "N/A"
+            elif sitio == "lector":
+                resultado_dict["lector_cap"] = "N/A"
+                resultado_dict["lector_date"] = "N/A"
+            elif sitio == "col":
+                resultado_dict["col_cap"] = "N/A"
+                resultado_dict["col_date"] = "N/A"
             continue
 
         cap_match = re.search(r'Capítulo: ([^\n]+)', res)
         act_match = re.search(r'Actualizado: ([^\n]+)', res)
 
-        dias_texto = act_match.group(1) if act_match else "N/A"
-        cap_texto = cap_match.group(1) if cap_match else "N/A"
+        cap_texto = cap_match.group(1) if cap_match else "N/D"
+        dias_texto = act_match.group(1) if act_match else "N/D"
 
-        # Determinar sitio y asignar a columnas correctas
-        if res.startswith("CATHARSIS"):
+        if sitio == "catharsis":
             resultado_dict["catharsis_cap"] = cap_texto
             resultado_dict["catharsis_date"] = dias_texto
-        elif res.startswith("ETERNAL"):
+            sitio_nombre = "CATHARSIS"
+
+        elif sitio == "eternal":
             resultado_dict["eternal_cap"] = cap_texto
             resultado_dict["eternal_date"] = dias_texto
-        elif res.startswith("LECTORJPG"):
+            sitio_nombre = "ETERNAL"
+
+        elif sitio == "lector":
             resultado_dict["lector_cap"] = cap_texto
             resultado_dict["lector_date"] = dias_texto
-        elif res.startswith("COLORCITO"):
+            sitio_nombre = "LECTORJPG"
+
+        elif sitio == "col":
             resultado_dict["col_cap"] = cap_texto
             resultado_dict["col_date"] = dias_texto
+            sitio_nombre = "COLORCITO"
 
-        # Embed para mostrar al instante
-        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "COLORCITO": "🖍️"}.get(res.split()[0], "❓")
+        # ✅ SOLO mostrar embed si hay link (o sea, si entró aquí)
+        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "COLORCITO": "🖍️"}[sitio_nombre]
+
         embed = discord.Embed(
-            title=f"{sitio_icono} {res.split()[0]}",
+            title=f"{sitio_icono} {sitio_nombre}",
             description=f"Capítulo: {cap_texto}\nActualizado: {dias_texto}",
-            color=obtener_color(dias_texto, res.split()[0])
+            color=obtener_color(dias_texto, sitio_nombre)
         )
         await ctx.send(embed=embed)
 
@@ -1879,14 +1904,14 @@ def escribir_a_hoja(canal, categoria, resultados):
             str(item_val),
             canal,
             categoria,
-            resultados.get("catharsis_cap", "N/A"),
-            resultados.get("catharsis_date", "N/A"),
-            resultados.get("eternal_cap", "N/A"),
-            resultados.get("eternal_date", "N/A"),
-            resultados.get("lector_cap", "N/A"),
-            resultados.get("lector_date", "N/A"),
-            resultados.get("col_cap", "N/A"),
-            resultados.get("col_date", "N/A")        
+            resultados.get("catharsis_cap", "N/D"),
+            resultados.get("catharsis_date", "N/D"),
+            resultados.get("eternal_cap", "N/D"),
+            resultados.get("eternal_date", "N/D"),
+            resultados.get("lector_cap", "N/D"),
+            resultados.get("lector_date", "N/D"),
+            resultados.get("col_cap", "N/D"),
+            resultados.get("col_date", "N/D")        
         ]
 
         body = {"values": [fila]}
