@@ -943,9 +943,20 @@ def evento_col(url, preestreno=False, retries=3, delay=5):
             bloques = soup.select("div.w-full.grid.grid-cols-3 a")
             if not bloques:
                 return "❌ No se encontraron capítulos en Colorcito."
-            ultimo = bloques[0]  # tomamos el primero (el más reciente)
-            cap_elem = ultimo.select_one("p.font-semibold")
-            tiempo_elem = ultimo.select("p.font-montserrat")
+
+            def extraer_cap_num(bloque):
+                cap_elem = bloque.select_one("p.font-semibold")
+                if not cap_elem:
+                    return -1
+                cap_text = cap_elem.get_text(strip=True)
+                m = re.search(r'Cap\.?\s*(\d+)', cap_text, re.I)
+                return int(m.group(1)) if m else -1
+
+            # 🔥 buscar el bloque con mayor capítulo
+            mejor_bloque = max(bloques, key=extraer_cap_num)
+
+            cap_elem = mejor_bloque.select_one("p.font-semibold")
+            tiempo_elem = mejor_bloque.select("p.font-montserrat")
             cap_text = cap_elem.get_text(strip=True) if cap_elem else "Desconocido"
             tiempo_text = tiempo_elem[-1].get_text(strip=True) if tiempo_elem else "Desconocido"
             # Extraer número de capítulo
@@ -2490,12 +2501,15 @@ async def upraw(ctx):
     if separar_roles == "1":
 
         await ctx.send(
-            "✏️ **Escribe en orden qué roles separas:** ~~ROL SEPARADO~~ / ROL DISPONIBLE PARA ASIGNACIÓN\n"
-            "`1 0 0` -- ~~TRAD~~ | **CLEAN** | **TYPE**\n"
-            "`1 1 0` -- ~~TRAD~~ | ~~CLEAN~~ | **TYPE**\n"
-            "`0 1 0` -- **TRAD** | ~~CLEAN~~ | **TYPE**\n"
-            "`0 1 1` -- **TRAD** | ~~CLEAN~~ | ~~TYPE~~\n"
-            "`0 0 1` -- **TRAD** | **CLEAN** | ~~TYPE~~\n"
+            "✏️ **Escribe en orden qué roles deseas separar:**\n"
+            "### UN ROL\n"
+            "`1 0 0` -- Si quieres reservar sólo TRAD\n"
+            "`0 1 0` -- Si quieres reservar sólo CLEAN\n"
+            "`0 0 1` -- Si quieres reservar sólo TYPE\n"
+            "### DOS ROLES\n"
+            "`1 1 0` -- Si quieres reservar TRAD y CLEAN\n"
+            "`1 0 1` -- Si quieres reservar TRAD y TYPE\n"
+            "`0 1 1` -- Si quieres reservar CLEAN y TYPE\n"
             "No puede ser `0 0 0` ni `1 1 1`.\n"
         )
         while True:
@@ -2751,6 +2765,7 @@ async def trad(ctx):
             f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y *NO REACCIONE**.\n"
             f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
             f" > - *Consulta a QC sobre como se expresan los personajes según proyecto.*\n "
             f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
@@ -2899,6 +2914,7 @@ async def clean(ctx):
             f"{extra_msg}"
             f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
             f" > - *Usa !drive para revisar si el capítulo existe o no.*\n "
+            f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y *NO REACCIONE**.\n"
             f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
             f" > - *Recuerde colocar las marcas de agua adecuadamente.*\n "
             f" > - *Las tiras completadas deben ser entregadas en formato JPG.*\n "
@@ -3000,6 +3016,9 @@ async def type(ctx):
         rows = data.get("values", [])
         fila_prioritaria = None
         fila_normal = None
+        def esta_completado(valor):
+            return valor.startswith("COMPLETADO")
+            
         for i in range(1, len(rows)):
             row = rows[i] + [""] * 24
 
@@ -3016,8 +3035,8 @@ async def type(ctx):
 
             if tipo == 2 and "manga" not in proyecto_nombre:
                 continue
-
-            if raw == "1" and trad_status == "COMPLETADO" and clean_status == "COMPLETADO" and type_status == "":
+                
+            if raw == "1" and esta_completado(trad_status) and esta_completado(clean_status) and not type_status:
                 if prioridad == "1" and fila_prioritaria is None:
                     fila_prioritaria = i
                 elif prioridad != "1" and fila_normal is None:
@@ -3038,7 +3057,7 @@ async def type(ctx):
         ROL_TYPE_QC = 1463686138689622250
         tiene_doble_rol = any(role.id == ROL_TYPE_QC for role in ctx.author.roles)
 
-        
+
         extra_msg = ""
         if es_newbie and not tiene_doble_rol:
             progreso = min(progreso_actual + 1, 5)
@@ -3053,6 +3072,7 @@ async def type(ctx):
                 f"🎨+👁️ <@{ctx.author.id}>, tu asignación **TYPE/QC** es {proyecto} - **capítulo {capitulo}**.\n"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Si el capítulo ya ha sido completado, sólo haga el QC/WEBP.*\n"
                 f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *En tu caso, apóyanos realizando su respectivo QC y WEBP.*\n "
@@ -3064,6 +3084,7 @@ async def type(ctx):
                 f"{extra_msg}"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
+                f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y *NO REACCIONE**.\n"
                 f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
@@ -3157,19 +3178,21 @@ async def check(ctx):
 
         disponibles = []
         updates = []
-
+        def esta_completado(valor):
+            return str(valor).startswith("COMPLETADO")
+            
         # Buscar capítulos disponibles para QC
         for i, row in enumerate(rows):
             row += [""] * 25  # asegurar al menos 25 columnas
             proyecto = row[1]  # columna B
             capitulo = row[2]  # columna C
-            status_trad = row[4].strip()  # E
-            status_clean = row[5].strip()  # F
-            status_type = row[6].strip()  # G
-            check_col = row[24].strip()  # Y
+            status_trad = str(row[4]).strip()
+            status_clean = str(row[5]).strip()
+            status_type = str(row[6]).strip()
+            check_col = str(row[24]).strip()
 
             # Solo tomar capítulos que aún no estén completados y sin CHECKER
-            if status_trad == "COMPLETADO" and status_clean == "COMPLETADO" and status_type == "COMPLETADO" and check_col == "":
+            if esta_completado(status_trad) and esta_completado(status_clean) and esta_completado(status_type) and not check_col:
                 disponibles.append((i, proyecto, capitulo))
                 if len(disponibles) >= cantidad:
                     break
@@ -3602,7 +3625,7 @@ async def scan(ctx):
 
     await ctx.send(f"✨ Total encontrados: **{len(tabla)}**")
 
-# Comando !editar
+# Comando !editar  
 @bot.command()
 @rol_permitido("status")
 async def editar(ctx, coordenada: str):
@@ -3635,7 +3658,8 @@ async def editar(ctx, coordenada: str):
         " ⤷ １ ► Completar asignación *(detiene a SAKU_REMINDER)*\n"
         " ⤷ ２ ► Limpiar asignación *(libera la asignación para alguien más la tome)*\n"
         " ⤷ ３ ► Suspender capítulo de la plantilla por MALA RAW\n"
-        "Responde con `1`, `2` o `3`"
+        " ⤷ ４ ► Cerrar asignación como completada de forma manual *(se solicitó con método manual)*\n"
+        "Responde con `1`, `2`, `3` o `4`"
     )
 
     def check(m):
@@ -3710,8 +3734,20 @@ async def editar(ctx, coordenada: str):
                     valueInputOption="RAW",
                     body={"values": [[""]]}
                 ).execute()
-
             await ctx.send(f"⛔ Capítulo **{coordenada}** ha sido suspendido correctamente.")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error:\n{e}")
+# MANUAL
+    elif opcion == "4":
+        try:
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!{col_letra}{fila}",
+                valueInputOption="RAW",
+                body={"values": [["COMPLETADO (MANUAL)"]]}
+            ).execute()
+            await ctx.send(f"🛠️ **{coordenada}** - **({proceso})** marcado como completado manualmente.")
 
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
