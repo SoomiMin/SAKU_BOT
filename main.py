@@ -48,6 +48,21 @@ CANALES_REGISTRO = {
     "regis-type": [1420511546874003614],
 }
 
+ROLES_INDIVIDUALES = {
+    "admin_": [1357527939226533920], 
+    "qc_": [1463686138689622250],
+    "newbie_": [1483529826253148201],
+    "ed_": [1314992379480113163], 
+    "ed_manga_": [1485736975964311756],
+    "tr_jap_": [1482883229072621680],
+    "tr_ing_manga_": [1485736815406223411],
+    "tr_kr_": [1314991067342442497],
+    "tr_ing_": [1314992105742925906],
+    "tr_indo_": [1314991988306612235],
+    "cl_": [1314992238979321867],
+    "cl_manga_": [1485736296205914112],
+}
+
 # — Configuración de la hoja
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
@@ -477,6 +492,15 @@ async def revisar_asignaciones_atrasadas():
                 proceso=proceso,
                 emoji=cfg["emoji"]
             )
+
+def tiene_rol(ctx, claves_roles):
+    user_roles = [role.id for role in ctx.author.roles]
+    roles_validos = []
+
+    for clave in claves_roles:
+        roles_validos.extend(ROLES_INDIVIDUALES.get(clave, []))
+
+    return any(role_id in user_roles for role_id in roles_validos)
 
 # Funciones de Saku_Drive 
 def authenticate():
@@ -2689,7 +2713,23 @@ async def trad(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
+            
+        # Validar roles según idioma
+        if idioma == 1 and not tiene_rol(ctx, ["tr_kr_"]):
+            return await ctx.send("🚫 No tienes el rol **TR-KR**, amor.")
 
+        elif idioma == 2 and not tiene_rol(ctx, ["tr_ing_"]):
+            return await ctx.send("🚫 No tienes el rol **TR-ING**, cielito.")
+
+        elif idioma == 3 and not tiene_rol(ctx, ["tr_indo_"]):
+            return await ctx.send("🚫 No tienes el rol **TR-INDO**, cosita.")
+
+        elif idioma == 4 and not tiene_rol(ctx, ["tr_ing_manga_"]):
+            return await ctx.send("🚫 No tienes el rol **TR-ING-MANGA**, quesito.")
+
+        elif idioma == 5 and not tiene_rol(ctx, ["tr_jap_"]):
+            return await ctx.send("🚫 No tienes el rol **TR-JAP**, osito de felpa.")
+        
         # Definir columna de idioma
         if idioma == 1:      # Coreano
             idioma_index = 8
@@ -2846,10 +2886,9 @@ async def clean(ctx):
             "  ⤷ ２ ► Manga\n\n"
             "*Escribe solo el número.*"
         )
-
+            
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
-
         try:
             msg = await bot.wait_for("message", check=check, timeout=120)
             tipo = int(msg.content.strip())
@@ -2857,6 +2896,14 @@ async def clean(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
+
+        # Validar roles CLEAN
+        if tipo == 1 and not tiene_rol(ctx, ["cl_"]):
+            return await ctx.send("🚫 No tienes el rol **CL**, cariño.")
+
+        elif tipo == 2 and not tiene_rol(ctx, ["cl_manga_"]):
+            return await ctx.send("🚫 No tienes el rol **CL-MANGA**, meloncito.")
+            
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A:X"
@@ -2967,6 +3014,7 @@ async def clean(ctx):
             "timestamp": datetime.utcnow().timestamp()
         }
 
+
 # Comando !type
 @bot.command()
 @canal_permitido("type")
@@ -3000,7 +3048,6 @@ async def type(ctx):
 
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
-
         try:
             msg = await bot.wait_for("message", check=check, timeout=120)
             tipo = int(msg.content.strip())
@@ -3008,6 +3055,13 @@ async def type(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
+
+        if tipo == 1 and not tiene_rol(ctx, ["ed_"]):
+            return await ctx.send("🚫 No tienes rol **ED**, cariño.")
+
+        elif tipo == 2 and not tiene_rol(ctx, ["ed_manga_"]):
+            return await ctx.send("🚫 No tienes rol **ED-MANGA**, caramelito.")
+            
         hoja = SHEET_NAME3
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
@@ -3084,7 +3138,7 @@ async def type(ctx):
                 f"{extra_msg}"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-                f" > - *Si confirma que el capítulo ya existe en el drive, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE A ESTA ASIGNACIÓN***.\n"
+                f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE**.\n"
                 f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
@@ -3144,6 +3198,7 @@ async def type(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
+        
 # Comando !check
 @bot.command()
 @canal_permitido("check")
@@ -3155,7 +3210,24 @@ async def check(ctx):
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] QC solicitado por {ctx.author.id}")
+        await ctx.send(
+            "🌐 *¿Qué tipo de proyectos vas a revisar?*\n"
+            "  ⤷ １ ► Manhwa | Manhua\n"
+            "  ⤷ ２ ► Manga\n\n"
+            "*Escribe solo el número.*"
+        )
 
+        def check_tipo(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
+        try:
+            msg_tipo = await bot.wait_for("message", timeout=60.0, check=check_tipo)
+            tipo = int(msg_tipo.content.strip())
+            if tipo not in [1, 2]:
+                raise ValueError
+        except:
+            return await ctx.send("❌ Número inválido, amor.")
+        
         await ctx.send("📚 ¿Cuántos capítulos deseas revisar? (máximo 15)")
 
         def check_msg(m):
@@ -3180,12 +3252,19 @@ async def check(ctx):
         updates = []
         def esta_completado(valor):
             return str(valor).startswith("COMPLETADO")
-            
+
         # Buscar capítulos disponibles para QC
         for i, row in enumerate(rows):
             row += [""] * 25  # asegurar al menos 25 columnas
             proyecto = row[1]  # columna B
             capitulo = row[2]  # columna C
+            proyecto_nombre = str(proyecto).lower()
+            # Filtro por tipo (igual que !type)
+            if tipo == 1 and "manga" in proyecto_nombre:
+                continue
+
+            if tipo == 2 and "manga" not in proyecto_nombre:
+                continue
             status_trad = str(row[4]).strip()
             status_clean = str(row[5]).strip()
             status_type = str(row[6]).strip()
