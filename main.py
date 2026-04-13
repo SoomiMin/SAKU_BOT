@@ -32,6 +32,7 @@ CANALES_COMANDOS = {
     "type": [1314958959378956338, 1462211348380389426],
     "check": [1470647289860063263],
     "update": [1440464661031157940],
+    "asset": [1484531526581620868],
 }
 
 ROLES_COMANDOS = {
@@ -69,7 +70,6 @@ SHEET_NAME = os.getenv("SHEET_NAME")
 SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
-SHEET_NAME5 = os.getenv("SHEET_NAME5")
 ROL_NEWBIE = 1483529826253148201
 
 # — Crear credenciales de servicio
@@ -501,6 +501,87 @@ def tiene_rol(ctx, claves_roles):
         roles_validos.extend(ROLES_INDIVIDUALES.get(clave, []))
 
     return any(role_id in user_roles for role_id in roles_validos)
+    
+async def tiene_asignacion_larga_activa(user_id):
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{SHEET_NAME3}!E:G"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    user_id = str(user_id)
+
+    for i in range(1, len(rows)):
+        row = rows[i] + [""] * 3
+
+        trad = str(row[0])
+        clean = str(row[1])
+        type_ = str(row[2])
+
+        # Buscar coincidencia exacta
+        if f"ASIGNADO LARGO | {user_id}" in trad:
+            return "TRADUCCIÓN"
+        if f"ASIGNADO LARGO | {user_id}" in clean:
+            return "LIMPIEZA"
+        if f"ASIGNADO LARGO | {user_id}" in type_:
+            return "EDICIÓN"
+    return None
+
+async def verificar_bloqueo_largo(ctx):
+    proceso = await tiene_asignacion_larga_activa(ctx.author.id)
+    if proceso:
+        await ctx.send(
+            f"🚫 <@{ctx.author.id}> Tienes una asignación larga activa en **{proceso}**.\n"
+            f"👉 Si ya terminaste, comunícate con un **ADMIN** para cerrar el proceso 💖"
+        )
+        return True
+    return False
+
+async def obtener_filas_batch(hoja, fila, col_letra):
+    # Leer la celda base
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{hoja}!{col_letra}{fila}"
+    ).execute()
+    valor = data.get("values", [[""]])[0][0]
+    if "ASIGNADO LARGO" not in valor:
+        return [(fila, col_letra)]  # normal, no batch
+        # Extraer batch_id
+    try:
+        batch_id = valor.split("|")[1].strip()
+    except:
+        return [(fila, col_letra)]
+
+    # Leer toda la hoja
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{hoja}!E:G"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    filas_encontradas = []
+
+    for i in range(1, len(rows)):
+        row = rows[i] + [""] * 3
+
+        if f"ASIGNADO LARGO | {batch_id}" in str(row[0]):
+            filas_encontradas.append((i+1, "E"))
+
+        if f"ASIGNADO LARGO | {batch_id}" in str(row[1]):
+            filas_encontradas.append((i+1, "F"))
+
+        if f"ASIGNADO LARGO | {batch_id}" in str(row[2]):
+            filas_encontradas.append((i+1, "G"))
+    return filas_encontradas if filas_encontradas else [(fila, col_letra)]    
+
+def parse_cap(x):
+    try:
+        x = str(x).replace("'", "").replace(",", ".").strip()
+        return float(x)
+    except:
+        return None
 
 # Funciones de Saku_Drive 
 def authenticate():
@@ -2676,6 +2757,8 @@ async def trad(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
         return
+    if await verificar_bloqueo_largo(ctx):
+        return
     async with assign_lock:
         last_assign_time = time.time()
 
@@ -2690,7 +2773,7 @@ async def trad(ctx):
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
                     f"Has completado las asignaciones adaptativas.\n"
-                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                    f"👉 Llama a un **QC** o **HARINA** para que revise tu progreso antes de continuar 💖"
                 )
         await ctx.send(
             "🌐 *¿Qué idioma vas a trabajar?*\n"
@@ -2861,10 +2944,10 @@ async def trad(ctx):
 @canal_permitido("clean")
 async def clean(ctx):
     global last_assign_time
-
     if not await check_assign_cooldown(ctx):
         return
-
+    if await verificar_bloqueo_largo(ctx):
+        return
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] CLEAN solicitado por {ctx.author.id}")
@@ -2878,7 +2961,7 @@ async def clean(ctx):
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
                     f"Has completado las asignaciones adaptativas.\n"
-                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                    f"👉 Llama a un **QC** O **MANTEQUILLA** para que revise tu progreso antes de continuar 💖"
                 )
         await ctx.send(
             "🌐 *¿Qué tipo de proyecto vas a limpiar?*\n"
@@ -3020,10 +3103,10 @@ async def clean(ctx):
 @canal_permitido("type")
 async def type(ctx):
     global last_assign_time
-
     if not await check_assign_cooldown(ctx):
         return
-
+    if await verificar_bloqueo_largo(ctx):
+        return
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
@@ -3037,7 +3120,7 @@ async def type(ctx):
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
                     f"Has completado las asignaciones adaptativas.\n"
-                    f"👉 Llama a un **QC** para que revise tu progreso antes de continuar 💖"
+                    f"👉 Llama a un **QC** o **AZÚCAR** para que revise tu progreso antes de continuar 💖"
                 )
         await ctx.send(
             "🌐 *¿Qué tipo de proyecto vas a editar?*\n"
@@ -3390,7 +3473,7 @@ async def status(ctx):
         print("❌ Error en !status")
         traceback.print_exc()
 
-# 🌸 Comando !create
+# Comando !create
 @bot.command()
 @commands.has_role(1357527939226533920)  # Rol ADMIN
 async def create(ctx):
@@ -3589,7 +3672,6 @@ async def ficha_cmd(ctx: commands.Context):
         print("Error en !ficha:", e)
         await ctx.send(f"*❌ Ocurrió un error inesperado: {e}*")
 
-
 # Comando !scan
 @bot.command()
 @rol_permitido("status")
@@ -3597,7 +3679,6 @@ async def scan(ctx):
     await ctx.send("🔍 Escaneando asignaciones activas...")
 
     hoja = SHEET_NAME3
-
     try:
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
@@ -3612,7 +3693,7 @@ async def scan(ctx):
         rows[i] += [""] * (24 - len(rows[i]))
 
     tabla = []
-    errores = []
+    largos = {}
 
     headers = ["COOR", "USER", "ROL", "PROYECTO", "CAP"]
 
@@ -3634,49 +3715,91 @@ async def scan(ctx):
         user_clean = user_clean[:10]
         user_type = user_type[:10]
 
+        cap_num = parse_cap(capitulo)
+        if cap_num is None:
+            continue
+
         # 🟡 TRAD
-        if trad == "ASIGNADO":
-            tabla.append([
-                f"{i+1}E",
-                user_trad,
-                "TRAD",
-                proyecto,
-                capitulo
-            ])
+        if trad.startswith("ASIGNADO"):
+            es_largo = "LARGO" in trad
+
+            if es_largo:
+                key = (user_trad, "TRAD", proyecto)
+
+                if key not in largos:
+                    largos[key] = {"caps": [], "coors": []}
+
+                largos[key]["caps"].append(cap_num)
+                largos[key]["coors"].append(f"{i+1}E")
+
+            else:
+                tabla.append([
+                    f"{i+1}E",
+                    user_trad,
+                    "TRAD",
+                    proyecto,
+                    capitulo
+                ])
 
         # 🔵 CLEAN
-        if clean == "ASIGNADO":
-            if trad != "COMPLETADO":
-                errores.append(f"{i+1}F CLEAN sin TRAD completo")
+        if clean.startswith("ASIGNADO"):
+            es_largo = "LARGO" in clean
 
-            tabla.append([
-                f"{i+1}F",
-                user_clean,
-                "CLEAN",
-                proyecto,
-                capitulo
-            ])
+            if es_largo:
+                key = (user_clean, "CLEAN", proyecto)
+
+                if key not in largos:
+                    largos[key] = {"caps": [], "coors": []}
+
+                largos[key]["caps"].append(cap_num)
+                largos[key]["coors"].append(f"{i+1}F")
+
+            else:
+                tabla.append([
+                    f"{i+1}F",
+                    user_clean,
+                    "CLEAN",
+                    proyecto,
+                    capitulo
+                ])
 
         # 🟣 TYPE
-        if type_ == "ASIGNADO":
-            if trad != "COMPLETADO" or clean != "COMPLETADO":
-                errores.append(f"{i+1}G TYPE sin flujo completo")
+        if type_.startswith("ASIGNADO"):
+            es_largo = "LARGO" in type_
 
-            tabla.append([
-                f"{i+1}G",
-                user_type,
-                "TYPE",
-                proyecto,
-                capitulo
-            ])
+            if es_largo:
+                key = (user_type, "TYPE", proyecto)
+
+                if key not in largos:
+                    largos[key] = {
+                        "caps": [],
+                        "coors": []
+                    }
+
+                largos[key]["caps"].append(cap_num)
+                largos[key]["coors"].append(f"{i+1}G")
+
+            else:
+                tabla.append([
+                    f"{i+1}G",
+                    user_type,
+                    "TYPE",
+                    proyecto,
+                    capitulo
+                ])
 
     if not tabla:
         return await ctx.send("✅ No hay asignaciones activas 😌")
 
     # 🔥 ORDEN: TRAD → CLEAN → TYPE → CAP
     orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
-    tabla.sort(key=lambda x: (orden_rol[x[2]], int(x[4] or 0)))
-
+    def safe_float(v):
+        try:
+            return float(str(v).replace("'", "").strip())
+        except:
+            return 0
+    tabla.sort(key=lambda x: (orden_rol[x[2].replace("**", "")], safe_float(x[4])))
+            
     # calcular ancho columnas
     all_rows = [headers] + tabla
     col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
@@ -3701,39 +3824,80 @@ async def scan(ctx):
 
     for chunk in chunks:
         await ctx.send(f"```{chunk}```")
+        
+    def fmt_cap(c):
+        try:
+            c = float(c)
+            return int(c) if c.is_integer() else c
+        except:
+            return c
+        
+    if largos:
+        await ctx.send("**⚡ Asignaciones largas ⚡**")
 
-    await ctx.send(f"✨ Total encontrados: **{len(tabla)}**")
+        for (user, rol, proyecto), data in largos.items():
+            coors = data["coors"]
+            caps = sorted(c for c in data["caps"] if isinstance(c, (int, float)))
+            caps_fmt = [fmt_cap(c) for c in caps]
+            rango = (
+                f"{caps_fmt[0]}-{caps_fmt[-1]}"
+                if len(caps_fmt) > 1
+                else str(caps_fmt[0])
+            )
+            coors_txt = " | ".join(coors)
 
+            mensaje = (
+                f"**User:** *{user}*\n"
+                f"**Tipo:** *{rol}*\n"
+                f"**Proyecto:** *{proyecto}* → **{rango}**\n"
+                f"( {coors_txt} )"
+            )
+            
+            await ctx.send(mensaje)
+    await ctx.send(f"✨ Total de asignaciones individuales encontrados: **{len(tabla)}**\n")
+    await ctx.send(f"⚡ Total de asignaciones largas encontrados: **{len(largos)}**")
+    
 # Comando !editar  
 @bot.command()
 @rol_permitido("status")
-async def editar(ctx, coordenada: str):
-    coordenada = coordenada.upper().strip()
-
-    # Validar formato
-    match = re.match(r"(\d+)([A-Z])", coordenada)
-    if not match:
-        return await ctx.send("❌ Formato inválido. Usa algo como `630E`")
-
-    fila = int(match.group(1))
-    col_letra = match.group(2)
+async def editar(ctx, *coordenadas):
+    if not coordenadas:
+        return await ctx.send("❌ Debes enviar al menos una coordenada. Ej: `!editar 577G 602G`")
 
     hoja = SHEET_NAME3
 
-    # Determinar proceso según columna
     proceso_map = {
         "E": "TRAD",
         "F": "CLEAN",
         "G": "TYPE"
     }
 
-    if col_letra not in proceso_map:
-        return await ctx.send("❌ Solo puedes editar columnas E, F o G")
+    coords = []
+    # 🔍 PARSEO DE COORDENADAS
+    for c in coordenadas:
+        c = c.upper().strip()
 
-    proceso = proceso_map[col_letra]
+        match = re.match(r"(\d+)([A-Z])", c)
+        if not match:
+            return await ctx.send(f"❌ Formato inválido: `{c}` (usa ej: 630E)")
 
+        fila = int(match.group(1))
+        col = match.group(2)
+
+        if col not in proceso_map:
+            return await ctx.send(f"❌ Solo se permite E, F o G: `{c}`")
+
+        coords.append((fila, col, proceso_map[col]))
+
+    proceso = coords[0][2]
+
+    # evitar mezclar procesos
+    if any(p != proceso for _, _, p in coords):
+        return await ctx.send("❌ No puedes mezclar TRAD / CLEAN / TYPE en el mismo batch.")
+
+    # 📩 MENÚ
     await ctx.send(
-        f"⚙️ **Editar {coordenada} ({proceso})**\n"
+        f"⚙️ **Editar asignación correspondiente a ({len(coords)} filas - {proceso})**\n"
         " ⤷ １ ► Completar asignación *(detiene a SAKU_REMINDER)*\n"
         " ⤷ ２ ► Limpiar asignación *(libera la asignación para alguien más la tome)*\n"
         " ⤷ ３ ► Suspender capítulo de la plantilla por MALA RAW\n"
@@ -3745,28 +3909,29 @@ async def editar(ctx, coordenada: str):
         return m.author == ctx.author and m.channel == ctx.channel
 
     try:
-        msg = await bot.wait_for("message", check=check, timeout=30)
+        msg = await bot.wait_for("message", check=check, timeout=60)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Tiempo agotado.")
 
     opcion = msg.content.strip()
-#COMPLETAR
+    # ✔ COMPLETAR
     if opcion == "1":
         try:
-            sheet.values().update(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{hoja}!{col_letra}{fila}",
-                valueInputOption="RAW",
-                body={"values": [["COMPLETADO"]]}
-            ).execute()
+            for fila, col, _ in coords:
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{hoja}!{col}{fila}",
+                    valueInputOption="RAW",
+                    body={"values": [["COMPLETADO"]]}
+                ).execute()
 
-            await ctx.send(f"✅ **{coordenada}** - **({proceso})** ha sido completado correctamente.")
+            await ctx.send(f"✅ Asignación COMPLETADA correspondiente a *({len(coords)} filas)*")
+
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
-#LIMPIAR
+    # 🧹 LIMPIAR
     elif opcion == "2":
 
-        # Configuración por proceso
         limpiar_map = {
             "TRAD": ["E", "L", "O", "S", "V", "Y"],
             "CLEAN": ["F", "M", "P", "T", "W", "Y"],
@@ -3776,165 +3941,283 @@ async def editar(ctx, coordenada: str):
         columnas = limpiar_map[proceso]
 
         try:
-            for col in columnas:
-                sheet.values().update(
-                    spreadsheetId=SPREADSHEET_ID,
-                    range=f"{hoja}!{col}{fila}",
-                    valueInputOption="RAW",
-                    body={"values": [[""]]}
-                ).execute()
+            for fila, _, _ in coords:
+                for col in columnas:
+                    sheet.values().update(
+                        spreadsheetId=SPREADSHEET_ID,
+                        range=f"{hoja}!{col}{fila}",
+                        valueInputOption="RAW",
+                        body={"values": [[""]]}
+                    ).execute()
 
-            await ctx.send(f"🧹 **{coordenada}** - **({proceso})** ha sido liberado correctamente.")
+            await ctx.send(f"🧹 Asignación LIBERADA correspondiente a *({len(coords)} filas)*")
 
         except Exception as e:
-            await ctx.send(f"❌ Error al limpiar:\n{e}")
-#SUSPENDER
+            await ctx.send(f"❌ Error:\n{e}")
+    # ⛔ SUSPENDER
     elif opcion == "3":
-        try:
-            # Marcar RAW como mala
-            sheet.values().update(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{hoja}!D{fila}",
-                valueInputOption="RAW",
-                body={"values": [["0 - MALA RAW"]]}
-            ).execute()
 
-            # 🔥 BONUS: limpiar también la asignación actual
+        try:
             limpiar_map = {
                 "TRAD": ["E", "L", "O", "S", "V", "Y"],
                 "CLEAN": ["F", "M", "P", "T", "W", "Y"],
                 "TYPE": ["G", "N", "Q", "U", "X", "Y"]
             }
 
-            for col in limpiar_map[proceso]:
+            columnas = limpiar_map[proceso]
+
+            for fila, col, _ in coords:
+
+                # marcar RAW mala
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{hoja}!D{fila}",
+                    valueInputOption="RAW",
+                    body={"values": [["0 - MALA RAW"]]}
+                ).execute()
+
+                # limpiar todo
+                for c in columnas:
+                    sheet.values().update(
+                        spreadsheetId=SPREADSHEET_ID,
+                        range=f"{hoja}!{c}{fila}",
+                        valueInputOption="RAW",
+                        body={"values": [[""]]}
+                    ).execute()
+
+            await ctx.send(f"⛔ RAW SUSPENDIDA por errores correspondiente a *({len(coords)} filas)*")
+            
+
+        except Exception as e:
+            await ctx.send(f"❌ Error:\n{e}")
+    # 🛠 MANUAL
+    elif opcion == "4":
+
+        try:
+            for fila, col, _ in coords:
                 sheet.values().update(
                     spreadsheetId=SPREADSHEET_ID,
                     range=f"{hoja}!{col}{fila}",
                     valueInputOption="RAW",
-                    body={"values": [[""]]}
+                    body={"values": [["COMPLETADO (MANUAL)"]]}
                 ).execute()
-            await ctx.send(f"⛔ Capítulo **{coordenada}** ha sido suspendido correctamente.")
-            
+
+            await ctx.send(f"🛠 Asignación COMPLETADA MMANUALMENTE correspondiente a *({len(coords)} filas)*")
+
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
-# MANUAL
-    elif opcion == "4":
+
+    else:
+        await ctx.send("❌ Opción inválida.")
+
+# Comando !asset
+@bot.command()
+@canal_permitido("asset")
+async def asset(ctx):
+    global last_assign_time
+
+    if not await check_assign_cooldown(ctx):
+        return
+    if await verificar_bloqueo_largo(ctx):
+        return
+    async with assign_lock:
+        last_assign_time = time.time()
+
+        print(f"[ASSET] solicitado por {ctx.author.id}")
+
+        # =========================
+        # 🎯 DETECTAR OPCIONES POR ROL
+        # =========================
+        opciones = []
+
+        if tiene_rol(ctx, ["tr_kr_"]):
+            opciones.append(("**TR-KR**", "TRAD", 1))
+        if tiene_rol(ctx, ["tr_ing_"]):
+            opciones.append(("**TR-ING**", "TRAD", 2))
+        if tiene_rol(ctx, ["tr_indo_"]):
+            opciones.append(("**TR-INDO**", "TRAD", 3))
+        if tiene_rol(ctx, ["tr_ing_manga_"]):
+            opciones.append(("**TR-ING-MANGA**", "TRAD", 4))
+        if tiene_rol(ctx, ["tr_jap_"]):
+            opciones.append(("**TR-JAP**", "TRAD", 5))
+
+        if tiene_rol(ctx, ["cl_"]):
+            opciones.append(("**CL**", "CLEAN", 1))
+        if tiene_rol(ctx, ["cl_manga_"]):
+            opciones.append(("**CL-MANGA**", "CLEAN", 2))
+
+        if tiene_rol(ctx, ["ed_"]):
+            opciones.append(("**ED**", "TYPE", 1))
+        if tiene_rol(ctx, ["ed_manga_"]):
+            opciones.append(("**ED-MANGA**", "TYPE", 2))
+
+        if not opciones:
+            return await ctx.send("🚫 No tienes roles válidos para asignaciones largas, amor.")
+
+        # =========================
+        # 📩 MENÚ
+        # =========================
+        texto = "🌸 **Tus roles disponibles para asignaciones largas:**\n"
+        for i, op in enumerate(opciones, start=1):
+            texto += f"{i} - {op[0]}\n"
+
+        texto += "\nResponde con el número de la opción:"
+        await ctx.send(texto)
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
         try:
+            msg = await bot.wait_for("message", check=check, timeout=60)
+            seleccion = int(msg.content.strip())
+            if seleccion < 1 or seleccion > len(opciones):
+                raise ValueError
+        except:
+            return await ctx.send("❌ Opción inválida, cielito.")
+
+        opcion = opciones[seleccion - 1]
+        tipo_op, proceso, variante = opcion
+
+        hoja = SHEET_NAME3
+
+        # 📥 LEER SHEET
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:Y"
+        ).execute()
+
+        rows = data.get("values", [])
+
+        for i in range(len(rows)):
+            rows[i] += [""] * (25 - len(rows[i]))
+
+        # 🔍 FILTRAR POR PROYECTO
+        proyectos = {}
+
+        for i in range(1, len(rows)):
+            row = rows[i]
+
+            proyecto = row[1]
+            capitulo = row[2]
+            raw = str(row[3]).strip()
+
+            trad = str(row[4]).strip()
+            clean = str(row[5]).strip()
+            type_ = str(row[6]).strip()
+
+            proyecto_nombre = str(proyecto).lower()
+
+            cumple = False
+
+            # 🔁 REUTILIZAR LÓGICA
+            if proceso == "TRAD":
+                idioma_map = {
+                    1: 8,
+                    2: 9,
+                    3: 10,
+                    4: 9,
+                    5: 11
+                }
+                idioma_index = idioma_map.get(variante)
+                idioma_flag = str(row[idioma_index - 1]).strip()
+
+                if variante == 4 and "manga" not in proyecto_nombre:
+                    continue
+
+                if raw == "1" and trad == "" and idioma_flag == "1":
+                    cumple = True
+
+            elif proceso == "CLEAN":
+                if variante == 1 and "manga" in proyecto_nombre:
+                    continue
+                if variante == 2 and "manga" not in proyecto_nombre:
+                    continue
+
+                if raw == "1" and clean == "":
+                    cumple = True
+
+            elif proceso == "TYPE":
+                def completo(v):
+                    return str(v).startswith("COMPLETADO")
+
+                if variante == 1 and "manga" in proyecto_nombre:
+                    continue
+                if variante == 2 and "manga" not in proyecto_nombre:
+                    continue
+
+                if raw == "1" and completo(trad) and completo(clean) and not type_:
+                    cumple = True
+
+            if cumple:
+                if proyecto not in proyectos:
+                    proyectos[proyecto] = []
+                proyectos[proyecto].append((i, row))
+
+        # 🎯 BUSCAR PROYECTO CON 5+
+        proyecto_valido = None
+
+        for nombre, caps in proyectos.items():
+            if len(caps) >= 5:
+                proyecto_valido = nombre
+                break
+
+        if not proyecto_valido:
+            return await ctx.send("😔 No hay proyectos con al menos 5 capítulos disponibles, amor.")
+
+        seleccion_caps = proyectos[proyecto_valido][:5]
+        
+        # 🔗 CONVERTIR A MENCIÓN SI ES CANAL
+        proyecto_mostrar = proyecto_valido
+
+        if proyecto_valido.startswith("#"):
+            nombre_canal = proyecto_valido[1:]
+            canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
+            if canal_discord:
+                proyecto_mostrar = canal_discord.mention
+
+        # 🧾 MENSAJE FINAL
+        mensaje = f"📦 <@{ctx.author.id}>, tu **asignación larga** es:\n"
+
+        for idx, (_, row) in enumerate(seleccion_caps):
+            letra = chr(65 + idx)
+            cap = row[2]
+            mensaje += f" *{letra}.* **CH. {cap}** -- {proyecto_mostrar}\n"
+
+        mensaje += f" > ⏳ Tienes **4 días** para completar esta asignación."
+
+        await ctx.send(mensaje)
+
+        # 📝 ESCRIBIR EN SHEET
+        batch_id = str(ctx.author.id)
+        valor = f"ASIGNADO LARGO | {batch_id}"
+
+        col_map = {
+            "TRAD": ("E", "L"),
+            "CLEAN": ("F", "M"),
+            "TYPE": ("G", "N")
+        }
+
+        col_estado, col_user = col_map[proceso]
+
+        for fila_index, row in seleccion_caps:
+            fila_real = fila_index + 1
+
+            # Estado
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
-                range=f"{hoja}!{col_letra}{fila}",
+                range=f"{hoja}!{col_estado}{fila_real}",
                 valueInputOption="RAW",
-                body={"values": [["COMPLETADO (MANUAL)"]]}
+                body={"values": [[valor]]}
             ).execute()
-            await ctx.send(f"🛠️ **{coordenada}** - **({proceso})** marcado como completado manualmente.")
 
-        except Exception as e:
-            await ctx.send(f"❌ Error:\n{e}")
-            
-# Comando !asignación_larga
-@bot.command(name="asset")
-@rol_permitido("table")  # puedes cambiar el permiso
-async def asset(ctx):
+            # Usuario
+            usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{hoja}!{col_user}{fila_real}",
+                valueInputOption="RAW",
+                body={"values": [[usuario_guardado]]}
+            ).execute()
 
-    if not ctx.message.mentions:
-        return await ctx.send("❌ Formato incorrecto.\nEjemplo:\n!asignación_larga -- @user -- #canal -- 1 2 3 -- TRAD -- 4")
-
-    user = ctx.message.mentions[0]
-
-    args = ctx.message.content.split("--")
-
-    if len(args) < 6:
-        return await ctx.send("❌ Formato incorrecto.\nEjemplo:\n!asignación_larga -- @user -- #canal -- 1 2 3 -- TRAD -- 4")
-
-    canal_txt = args[2].strip()
-    caps_txt = args[3].strip()
-    rol_txt = args[4].strip().upper()
-    dias_txt = args[5].strip()
-
-    # 📌 Canal
-    canal = None
-
-    # Detectar mención tipo <#123456789>
-    match = re.search(r"<#(\d+)>", canal_txt)
-    if match:
-        canal_id = int(match.group(1))
-        canal = ctx.guild.get_channel(canal_id)
-
-    if not canal:
-        return await ctx.send("❌ Canal no encontrado.")
-
-    # 📌 Dar acceso si no tiene
-    if user not in canal.members:
-        try:
-            await canal.set_permissions(user, read_messages=True, send_messages=True)
-        except:
-            pass
-
-    # 📌 Capítulos
-    caps = caps_txt.split()
-
-    # 📌 Rol
-    rol_base = "TRAD" if "TRAD" in rol_txt else "CLEAN" if "CLEAN" in rol_txt else "TYPE"
-
-    rol_col_map = {
-        "TRAD": 3,
-        "CLEAN": 4,
-        "TYPE": 5
-    }
-
-    rol_index = rol_col_map[rol_base]
-
-    # 📌 Tiempo
-    dias = int(dias_txt)
-
-    fecha_asignacion = datetime.utcnow()
-    fecha_entrega = fecha_asignacion + timedelta(days=dias)
-
-    # 📌 Leer hoja
-    data = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME5}!A:H"
-    ).execute()
-
-    rows = data.get("values", [])
-
-    last_item = len(rows)
-
-    nuevos = []
-
-    for i, cap in enumerate(caps):
-        fila = [""] * 8
-
-        fila[0] = last_item + i      # Item
-        fila[1] = recortar_proyecto(f"#{canal.name}")
-        fila[2] = cap               # Capítulo
-        fila[rol_index] = f"@{user.display_name}"
-        fila[6] = fecha_asignacion.strftime("%Y-%m-%d")
-        fila[7] = fecha_entrega.strftime("%Y-%m-%d")
-
-        nuevos.append(fila)
-
-    # 📌 Escribir en sheet
-    sheet.values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME5}!A:H",
-        valueInputOption="RAW",
-        body={"values": nuevos}
-    ).execute()
-
-    # 📢 Mensaje bonito
-    caps_str = "-".join(caps)
-
-    await canal.send(
-        f"------------------------------------\n"
-        f"(っ◔◡◔)っ Asignación larga para {user.mention}\n"
-        f"## {rol_txt} -- {caps_str}\n"
-        f"Se entrega en {dias} días.\n"
-        f"> *Si no tienes acceso al drive, solicítalo.*\n"
-        f"> *Si entregas antes, avisa a @QC|@ADMIN para continuar con el proceso.*\n"
-        f"------------------------------------"
-    )
-
-    await ctx.send("✅ Asignación larga registrada correctamente.")
 # Ejecutar bot
 bot.run(TOKEN)
