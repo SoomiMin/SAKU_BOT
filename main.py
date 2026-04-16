@@ -1248,7 +1248,11 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
         "LINK_CATH": None,
         "LINK_ETER": None,
         "LINK_LEC": None,
-        "LINK_COL": None
+        "LINK_COL": None,
+        "PRE_ETER": False,
+        "PRE_CATH": False,
+        "PRE_LEC": False,
+        "PRE_COL": False
     }
     try:
         pins = await channel.pins()
@@ -1272,30 +1276,47 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
             if "colorcitoscan" in lu and not found["LINK_COL"]:
                 found["LINK_COL"] = u
 
-        # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
+    # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
         # Buscamos líneas con prefijos conocidos
         lines = (msg.content or "").splitlines()
         for ln in lines:
             ln_stripped = ln.strip()
             # formato "Eternal: slug" -> no es URL, pero puede indicar que existe una referencia
-            if ln_stripped.lower().startswith("eternal") and not found["LINK_ETER"]:
-                # si hay algo después de "Eternal:" lo guardamos como texto (no ideal, pero ayuda)
+            if ln_stripped.lower().startswith("eternal"):
                 parts = ln_stripped.split(":", 1)
-                if len(parts) > 1 and parts[1].strip():
-                    found["LINK_ETER"] = parts[1].strip()
-            if ln_stripped.lower().startswith("catharsis") and not found["LINK_CATH"]:
-                parts = ln_stripped.split(":", 1)
-                if len(parts) > 1 and parts[1].strip():
-                    found["LINK_CATH"] = parts[1].strip()
-            if ln_stripped.lower().startswith("lector") and not found["LINK_LEC"]:
-                parts = ln_stripped.split(":", 1)
-                if len(parts) > 1 and parts[1].strip():
-                    found["LINK_LEC"] = parts[1].strip()
-            if ln_stripped.lower().startswith("color") and not found["LINK_COL"]:
-                parts = ln_stripped.split(":", 1)
-                if len(parts) > 1 and parts[1].strip():
-                    found["LINK_COL"] = parts[1].strip()
+                if len(parts) > 1:
+                    valor = parts[1].strip().lower()
+                    if valor == "00":
+                        found["PRE_ETER"] = True
+                    elif valor and not found["LINK_ETER"]:
+                        found["LINK_ETER"] = valor
 
+            if ln_stripped.lower().startswith("catharsis"):
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1:
+                    valor = parts[1].strip().lower()
+                    if valor == "00":
+                        found["PRE_CATH"] = True
+                    elif valor and not found["LINK_CATH"]:
+                        found["LINK_CATH"] = valor
+
+            if ln_stripped.lower().startswith("lector"):
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1:
+                    valor = parts[1].strip().lower()
+                    if valor == "00":
+                        found["PRE_LEC"] = True
+                    elif valor and not found["LINK_LEC"]:
+                        found["LINK_LEC"] = valor
+
+            if ln_stripped.lower().startswith("color"):
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1:
+                    valor = parts[1].strip().lower()
+                    if valor == "00":
+                        found["PRE_COL"] = True
+                    elif valor and not found["LINK_COL"]:
+                        found["LINK_COL"] = valor
     return found
 
 async def resolve_cath_domain(original_url: str) -> str:
@@ -1888,28 +1909,28 @@ async def sitio(ctx):
 
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"]))
+        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
         task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
 
     # --- ETERNAL ---
     if pins_data["LINK_ETER"]:
-        tasks.append(asyncio.to_thread(evento_eter, pins_data["LINK_ETER"]))
+        tasks.append(asyncio.to_thread(evento_eter, pins_data["LINK_ETER"], pins_data.get("PRE_ETER", False)))
         task_map[len(tasks)-1] = "eternal"
     else:
         task_map["eternal"] = "ND"
 
     # --- LECTOR ---
     if pins_data["LINK_LEC"]:
-        tasks.append(asyncio.to_thread(evento_lec, pins_data["LINK_LEC"]))
+        tasks.append(asyncio.to_thread(evento_lec, pins_data["LINK_LEC"], pins_data.get("PRE_LEC", False)))
         task_map[len(tasks)-1] = "lector"
     else:
         task_map["lector"] = "ND"
 
     # --- COLORCITO ---
     if pins_data["LINK_COL"]:
-        tasks.append(asyncio.to_thread(evento_col, pins_data["LINK_COL"]))
+        tasks.append(asyncio.to_thread(evento_col, pins_data["LINK_COL"], pins_data.get("PRE_COL", False)))
         task_map[len(tasks)-1] = "col"
     else:
         task_map["col"] = "ND"
