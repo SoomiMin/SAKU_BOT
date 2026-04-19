@@ -2511,7 +2511,7 @@ async def update_cmd(ctx: commands.Context):
                     color=0xFFB6C1
                 )
                 embed.set_footer(text="ଘ(˵╹-╹)━☆⋆ ˚｡⋆୨୧˚ 🌸SAKU_BOT🌸 ˚୨୧⋆｡˚ ⋆")
-                await canal_real.send("### @everyone", embed=embed)
+                await canal_real.send("### ¡Habemus actualización!", embed=embed)
         except Exception as e:
             print("⚠ Error enviando anuncio al canal:", e)
     
@@ -3810,7 +3810,7 @@ async def scan(ctx):
                 ])
 
     if not tabla:
-        return await ctx.send("✅ No hay asignaciones activas 😌")
+        return await ctx.send("✅ No hay asignaciones individuales activas 😌")
 
     # 🔥 ORDEN: TRAD → CLEAN → TYPE → CAP
     orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
@@ -3820,7 +3820,7 @@ async def scan(ctx):
         except:
             return 0
     tabla.sort(key=lambda x: (orden_rol[x[2].replace("**", "")], safe_float(x[4])))
-            
+
     # calcular ancho columnas
     all_rows = [headers] + tabla
     col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
@@ -3845,38 +3845,152 @@ async def scan(ctx):
 
     for chunk in chunks:
         await ctx.send(f"```{chunk}```")
-        
+
     def fmt_cap(c):
         try:
             c = float(c)
             return int(c) if c.is_integer() else c
         except:
             return c
-        
-    if largos:
-        await ctx.send("**⚡ Asignaciones largas ⚡**")
 
-        for (user, rol, proyecto), data in largos.items():
-            coors = data["coors"]
-            caps = sorted(c for c in data["caps"] if isinstance(c, (int, float)))
-            caps_fmt = [fmt_cap(c) for c in caps]
-            rango = (
-                f"{caps_fmt[0]}-{caps_fmt[-1]}"
-                if len(caps_fmt) > 1
-                else str(caps_fmt[0])
-            )
-            coors_txt = " | ".join(coors)
+    await ctx.send(f"✨ Total de asignaciones individuales encontrados: **{len(tabla)}**")
 
-            mensaje = (
-                f"**User:** *{user}*\n"
-                f"**Tipo:** *{rol}*\n"
-                f"**Proyecto:** *{proyecto}* → **{rango}**\n"
-                f"( {coors_txt} )"
-            )
-            
-            await ctx.send(mensaje)
-    await ctx.send(f"✨ Total de asignaciones individuales encontrados: **{len(tabla)}**\n")
-    await ctx.send(f"⚡ Total de asignaciones largas encontrados: **{len(largos)}**")
+# Comando !scanlist
+@bot.command()
+@rol_permitido("status")
+async def scanlist(ctx):
+    await ctx.send("📋 Escaneando asignaciones largas...")
+
+    hoja = SHEET_NAME3
+    try:
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:Y"
+        ).execute()
+    except Exception as e:
+        return await ctx.send(f"❌ Error leyendo la hoja:\n{e}")
+
+    rows = data.get("values", [])
+
+    for i in range(len(rows)):
+        rows[i] += [""] * (24 - len(rows[i]))
+
+    largos = {}
+
+    for i in range(1, len(rows)):
+        row = rows[i]
+
+        proyecto = recortar_proyecto(row[1])[:15]
+        capitulo = row[2]
+
+        trad = str(row[4]).strip().upper()
+        clean = str(row[5]).strip().upper()
+        type_ = str(row[6]).strip().upper()
+
+        user_trad = row[11].split("/")[0] if row[11] else ""
+        user_clean = row[12].split("/")[0] if row[12] else ""
+        user_type = row[13].split("/")[0] if row[13] else ""
+
+        cap_num = parse_cap(capitulo)
+        if cap_num is None:
+            continue
+
+        # TRAD
+        if trad.startswith("ASIGNADO") and "LARGO" in trad:
+            key = (user_trad[:10], "TRAD", proyecto)
+            coor = f"{i+1}E"
+
+            largos.setdefault(key, {"caps": [], "coors": []})
+            largos[key]["caps"].append(cap_num)
+            largos[key]["coors"].append(coor)
+
+        # CLEAN
+        if clean.startswith("ASIGNADO") and "LARGO" in clean:
+            key = (user_clean[:10], "CLEAN", proyecto)
+            coor = f"{i+1}F"
+
+            largos.setdefault(key, {"caps": [], "coors": []})
+            largos[key]["caps"].append(cap_num)
+            largos[key]["coors"].append(coor)
+
+        # TYPE
+        if type_.startswith("ASIGNADO") and "LARGO" in type_:
+            key = (user_type[:10], "TYPE", proyecto)
+            coor = f"{i+1}G"
+
+            largos.setdefault(key, {"caps": [], "coors": []})
+            largos[key]["caps"].append(cap_num)
+            largos[key]["coors"].append(coor)
+
+    if not largos:
+        return await ctx.send("✅ No hay asignaciones largas activas 😌")
+
+    def fmt_cap(c):
+        return int(c) if float(c).is_integer() else c
+
+    # 🧱 Construir tabla
+    headers = ["USER", "ROL", "PROYECTO", "RANGO"]
+
+    tabla = []
+
+    for (user, rol, proyecto), data in largos.items():
+        caps = sorted(data["caps"])
+        caps_fmt = [fmt_cap(c) for c in caps]
+
+        rango = (
+            f"{caps_fmt[0]}-{caps_fmt[-1]}"
+            if len(caps_fmt) > 1
+            else str(caps_fmt[0])
+        )
+
+        coors = " - ".join(data["coors"])
+        coors_line = coors        
+
+        tabla.append({
+            "main": [user, rol, proyecto, rango],
+            "coors": coors_line
+        })
+
+    # ordenar igual que scan
+    orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
+    tabla.sort(key=lambda x: (orden_rol[x["main"][1]], x["main"][3]))
+
+    # 📏 formato bonito
+    all_rows = [headers] + [item["main"] for item in tabla]
+    col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
+
+    def make_separator():
+        return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
+
+    def make_row(row):
+        return "| " + " | ".join(str(row[i]).ljust(col_widths[i]) for i in range(len(row))) + " |"
+
+    lines = []
+    lines.append(make_separator())
+    lines.append(make_row(headers))
+    lines.append(make_separator())
+
+    for item in tabla:
+        main_row = item["main"]
+        coors_text = item["coors"]
+
+        # fila principal
+        lines.append(make_row(main_row))
+
+        # fila de coords (ocupa toda la tabla)
+        total_width = sum(col_widths) + (3 * len(col_widths)) + 1
+        coor_line = "| " + coors_text.center(total_width - 4) + " |"
+
+        lines.append(coor_line)
+        lines.append(make_separator())
+
+    texto = "\n".join(lines)
+    chunks = [texto[i:i+1900] for i in range(0, len(texto), 1900)]
+
+    for chunk in chunks:
+        await ctx.send(f"```{chunk}```")
+
+    await ctx.send(f"⚡ Total de asignaciones largas: **{len(tabla)}**")
     
 # Comando !editar  
 @bot.command()
