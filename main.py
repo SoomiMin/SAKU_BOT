@@ -1429,24 +1429,25 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
     return final
 
 # --- Render de plantilla_fb ---
-def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str) -> str:
-    """
-    Rellena la plantilla_fb usando las variables encontradas.
-    Si una URL no existe, simplemente NO se imprime su línea.
-    """
-
+def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, use_links: bool) -> str:
     def safe(k):
         v = vars_dict.get(k)
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
         return v
 
-    # Links dinámicos: solo agregarlos si existen
     enlaces = []
-    if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
-    if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
-    if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
-    if safe("LINK_COL"): enlaces.append(f"✦ {safe('LINK_COL')}")
+
+    if use_links:
+        if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
+        if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
+        if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
+        if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
+    else:
+        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en Catharsis!")
+        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en Eternal!")
+        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en LectorJPG!")
+        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en Colorcitos!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
@@ -1455,7 +1456,7 @@ def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str
     generos = safe("GENEROS") or "[SIN_GENEROS]"
     tipo    = safe("TIPO")    or "[SIN_TIPO]"
 
-    texto = (
+    return (
 f"🌹⋆｡°✩ ˚｡⋆ 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 ⋆｡°✩ ˚｡⋆🌹\n"
 f"༺📘༻ **{titulo}** ༺📘༻\n"
 f"┏━━━━━━༻❁༺━━━━━━┓\n"
@@ -1475,32 +1476,32 @@ f"➤ {safe('LINK_DIS')}\n"
 f"✦───༺♡༻───✦\n\n"
 f"#CapítuloNuevo #Manhwa #BreakScan"
     )
-    return texto
 
 # --- Render de plantilla_dis ---
-def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: str) -> str:
-    """
-    Rellena la plantilla_fb usando las variables encontradas.
-    Si una URL no existe, simplemente NO se imprime su línea.
-    """
-
+def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, use_links: bool) -> str:
     def safe(k):
         v = vars_dict.get(k)
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
         return v
-
-    # Links dinámicos: solo agregarlos si existen
     enlaces = []
-    if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
-    if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
-    if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
-    if safe("LINK_COL"): enlaces.append(f"✦ {safe('LINK_COL')}")
+
+    if use_links:
+        if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
+        if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
+        if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
+        if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
+    else:
+        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en Catharsis!")
+        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en Eternal!")
+        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en LectorJPG!")
+        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en Colorcitos!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
-    titulo  = safe("TITULO")  or "[SIN_TITULO]"
-    texto_dis = (
+    titulo = safe("TITULO") or "[SIN_TITULO]"
+
+    return (
 f"🌹 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 🌹\n"
 f"## ༺📘༻ **{titulo}** ༺📘༻\n\n"
 f"🖋 {caps_word} {cap_text}\n\n"
@@ -1508,34 +1509,41 @@ f"🌐 Lectura disponible en:\n"
 f"{enlaces_texto}\n"
 f"# Muchas gracias por su apoyo 💖\n"
     )
-    return texto_dis
 
 # --- Render de plantilla_tel ---
-def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, choice: str) -> str:
-    """
-    Rellena la plantilla para Telegram.
-    choice: '1' -> CAPÍTULO, '2' -> CAPÍTULOS (para decidir 'YA DISPONIBLE' o 'YA DISPONIBLES')
-    """
-    titulo = vars_dict.get("TITULO") or "[SIN_TITULO]"
+def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, choice: str, use_links: bool) -> str:
+    titulo = (vars_dict.get("TITULO") or "[SIN_TITULO]").strip().upper()
+
+    # 🔥 línea fija
+    linea = "✨━━━━━━━━━━━━━━━✨"
+
     enlaces = []
-    for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
-        v = vars_dict.get(k)
-        if v: enlaces.append(v)
+
+    if use_links:
+        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
+            v = vars_dict.get(k)
+            if v: enlaces.append(v)
+    else:
+        if vars_dict.get("LINK_CATH"): enlaces.append("¡Búscanos en Catharsis!")
+        if vars_dict.get("LINK_ETER"): enlaces.append("¡Búscanos en Eternal!")
+        if vars_dict.get("LINK_LEC"):  enlaces.append("¡Búscanos en LectorJPG!")
+        if vars_dict.get("LINK_COL"):  enlaces.append("¡Búscanos en Colorcitos!")
+
     enlaces_texto = "\n".join(enlaces) if enlaces else "[No hay enlaces]"
 
-    caps_word_text = caps_word
     disponible_text = "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮" if choice == "1" else "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮𝓼"
 
-    texto = (
+    return (
 f"✨ ¡Buenas buenas, gente hermosa! ✨\n"
-f"Acabamos de actualizar\n\n"
-f"💛 **{titulo}** 💛\n\n"
-f"📘 {caps_word_text} {cap_text} {disponible_text}\n\n"
+f"🔔 ¡Habemus actualización! 🔔\n\n"
+f"{linea}\n"
+f"**{titulo}**\n"
+f"{linea}\n\n"
+f"📘 {caps_word} {cap_text} {disponible_text}\n\n"
 f"📍 LÉELO AQUÍ:\n"
 f"{enlaces_texto}\n\n"
 f"¡Gracias por su paciencia, por leer y por todos esos comentarios que nos motivan! 💫"
     )
-    return texto
 
 # --- Render de plantilla_cath ---
 def render_plantilla_cath(vars_dict: Dict[str, Any], cap_text: str) -> str:
@@ -1578,7 +1586,8 @@ f"🔗 Link: 👉 {safe('LINK_ETER')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_eter
-
+    
+# --- Render de plantilla_lec ---
 def render_plantilla_lec(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
     """
     Rellena la plantilla_lec.
@@ -2435,6 +2444,13 @@ async def update_cmd(ctx: commands.Context):
         msg3 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
         cap_text = msg3.content.strip()
 
+        # NUEVA PREGUNTA
+        await ctx.send("¿Desea compartir enlaces directos?\n`1` Sí\n`2` No")
+        msg_links = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        choice_links = msg_links.content.strip()
+
+        use_links = True if choice_links == "1" else False
+
         # 4) construir variables
         await ctx.send("🔎 Buscando datos en la hoja y pins del canal...")
         try:
@@ -2453,9 +2469,9 @@ async def update_cmd(ctx: commands.Context):
             vars_dict["LINK_CATH"] = resolved_cath
 
         # 5) render de plantillas
-        texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps)
-        texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps)
-        texto_tel = render_plantilla_tel(vars_dict, cap_text, palabra_caps, choice)
+        texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps, use_links)
+        texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps, use_links)
+        texto_tel = render_plantilla_tel(vars_dict, cap_text, palabra_caps, choice, use_links)
         texto_cath = render_plantilla_cath(vars_dict, cap_text)
         texto_eter = render_plantilla_eter(vars_dict, cap_text, palabra_caps)
         texto_lec = render_plantilla_lec(vars_dict, cap_text, palabra_caps)
@@ -2474,7 +2490,7 @@ async def update_cmd(ctx: commands.Context):
         pins_info = []
         for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
             pins_info.append(f"{k}: {vars_dict.get(k) if vars_dict.get(k) else '[NO]'}")
-            
+
         status_text = "\n".join(status_lines + ["Pins encontrados:"] + pins_info)
 
         canal_real = vars_dict.get("CHANNEL")  # este es el canal real ya encontrado
@@ -2483,7 +2499,7 @@ async def update_cmd(ctx: commands.Context):
 
         if LINK_CATH:
             LINK_CATH = await resolve_cath_domain(LINK_CATH)
-        
+
         # 7) enviar preview y status
         await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
         await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
@@ -2496,7 +2512,7 @@ async def update_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
         if vars_dict.get("LINK_COL"):
             await ctx.send("👇 **Previsualización COLORCITOS**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de colorcitos
-            
+
         canal_real = vars_dict.get("CHANNEL_OBJ")
         # 8) Anuncio automático en el canal del proyecto
         try:
@@ -2514,7 +2530,7 @@ async def update_cmd(ctx: commands.Context):
                 await canal_real.send("### ¡Habemus actualización!", embed=embed)
         except Exception as e:
             print("⚠ Error enviando anuncio al canal:", e)
-    
+
     except asyncio.TimeoutError:
         await ctx.send(f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`.")
     except Exception as e:
