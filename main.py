@@ -790,7 +790,8 @@ MESES = {
 # Lista de dominios Catharsis válidos (fácil de actualizar)
 CATH_DOMAINS = [
     "catharsisworld.dig-it.info",
-    "catharsisworld.vxviral.xyz"
+    "catharsisworld.vxviral.xyz",
+    "catharsisworld.lat"
 ]
 
 def url_with_domain(url: str, new_domain: str) -> str:
