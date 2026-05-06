@@ -793,11 +793,6 @@ CATH_DOMAINS = [
     "catharsisworld.vxviral.xyz",
     "catharsisworld.lat"
 ]
-# Lista de dominios para LECTOR NUEVO
-LEC_DOMAINS = [
-    "lectorjpg.com",
-    "visorjpg.lat"
-]
 
 def url_with_domain(url: str, new_domain: str) -> str:
     """Reemplaza el dominio de un URL manteniendo esquema y path."""
@@ -876,21 +871,6 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": "https://lectorjpg.com/"
     }
-    # PRUEBA DE DOMINIOS
-    if not check_alive(url):
-
-        dominio_actual = urlparse(url).netloc
-
-        for dom in LEC_DOMAINS:
-            if dom == dominio_actual:
-                continue
-
-            alt_url = url_with_domain(url, dom)
-            if check_alive(alt_url):
-                url = alt_url
-                break
-        else:
-            return "❌ LectorJPG parece estar caído en todos los dominios."
 
     for intento in range(1, retries + 1):
         try:
@@ -942,7 +922,6 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             return f"LECTORJPG\n> Capítulo: {cap}\n> Actualizado: {fecha_text}"
 
         except requests.exceptions.HTTPError as e:
-            status = getattr(e.response, "status_code",None)
             if response.status_code in [503, 429]:
                 print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
                 time.sleep(delay)
@@ -1381,36 +1360,6 @@ def normalize_cath_link(url_or_text: str) -> str:
         return url_or_text
     # si es URL y contiene .dig-it.info -> reemplazar por .vxviral.xyz (ejemplo)
     corrected = url_or_text.replace(".dig-it.info", ".vxviral.xyz")
-    # más reglas de normalización pueden agregarse aquí
-    return corrected
-
-async def resolve_lec_domain(original_url: str) -> str:
-    if not original_url:
-        return None
-
-    if check_alive(original_url):
-        return original_url
-    try:
-        parsed = urlparse(original_url)
-        original_domain = parsed.netloc.lower()
-    except:
-        return original_url
-
-    for dom in LEC_DOMAINS:
-        if dom == original_domain:
-            continue
-
-        test_url = url_with_domain(original_url, dom)
-        if check_alive(test_url):
-            return test_url
-
-    return original_url
-    
-# Normalizar dominio Lector
-def normalize_lec_link(url_or_text: str) -> str:
-    if not url_or_text:
-        return url_or_text    
-    corrected = url_or_text.replace("lectorjpg.com", "visorjpg.lat")
     # más reglas de normalización pueden agregarse aquí
     return corrected
 
