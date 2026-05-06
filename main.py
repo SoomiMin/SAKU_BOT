@@ -791,7 +791,12 @@ MESES = {
 CATH_DOMAINS = [
     "catharsisworld.dig-it.info",
     "catharsisworld.vxviral.xyz",
-    "catharsisworld.lat"
+    "catharsisworld.lat",
+    "catharsisworld.online"
+]
+LEC_DOMAINS = [
+    "lectorjpg.com",
+    "visorjpg.lat"
 ]
 
 def url_with_domain(url: str, new_domain: str) -> str:
@@ -864,12 +869,39 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
     pass
 
 def evento_lec(url, preestreno=False, retries=3, delay=5):
+    # ---------- 1) Intento: usar el link tal como viene ----------
+    if not check_alive(url):
+
+        # ---------- 2) Intentar con todos los dominios ----------
+        try:
+            dominio_actual = urlparse(url).netloc
+        except:
+            dominio_actual = ""
+
+        for dom in LEC_DOMAINS:
+            if dom == dominio_actual:
+                continue
+
+            alt_url = url_with_domain(url, dom)
+            if check_alive(alt_url):
+                url = alt_url
+                break
+        else:
+            print("❌ Ningún dominio LECTOR respondió.")
+            return "❌ Lector parece estar caído en todos los dominios."
+
+    # ---------- 3) Dominio final ----------
+    try:
+        dominio = urlparse(url).netloc
+    except:
+        dominio = "lectorjpg.com"
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/142.0.0.0 Safari/537.36",
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Referer": "https://lectorjpg.com/"
+        "Referer": f"https://{dominio}/"
     }
 
     for intento in range(1, retries + 1):
@@ -879,12 +911,10 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # 📌 tomar el último update y no el primero
             blocks = soup.select("a.group.relative.flex")
             if not blocks:
                 return "❌ No se encontró ningún capítulo."
 
-            # 🔍 tomar primer y último bloque
             candidatos = [blocks[0]]
             if len(blocks) > 1:
                 candidatos.append(blocks[-1])
@@ -896,7 +926,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
                 cap_text = cap_span.get_text(strip=True)
                 m = re.search(r'capitulo\s*(\d+)', cap_text, re.I)
                 return int(m.group(1)) if m else -1
-            # 📌 elegir el bloque con el capítulo mayor
+
             block = max(candidatos, key=extraer_cap_num)
 
             cap_span = block.select_one("span.truncate.text-sm")
@@ -923,7 +953,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
 
         except requests.exceptions.HTTPError as e:
             if response.status_code in [503, 429]:
-                print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
+                print(f"⚠ Intento {intento}/{retries}: {response.status_code}, reintentando...")
                 time.sleep(delay)
                 continue
             return f"❌ Error HTTP: {e}"
@@ -932,7 +962,7 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             time.sleep(delay)
             continue
 
-    return "❌ No se pudo acceder a LectorJPG después de varios intentos."
+    return "❌ No se pudo acceder a Lector después de varios intentos."
 
 def evento_cath(url, preestreno=False, retries=3, delay=5):
     # ---------- 1) Intento: usar el link tal como viene ----------
@@ -1272,7 +1302,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                 found["LINK_CATH"] = u
             if "eternalmangas" in lu and not found["LINK_ETER"]:
                 found["LINK_ETER"] = u
-            if "lectorjpg" in lu and not found["LINK_LEC"]:
+            if any(dom in lu for dom in LEC_DOMAINS) and not found["LINK_LEC"]:
                 found["LINK_LEC"] = u
             if "colorcitoscan" in lu and not found["LINK_COL"]:
                 found["LINK_COL"] = u
@@ -1363,6 +1393,31 @@ def normalize_cath_link(url_or_text: str) -> str:
     # más reglas de normalización pueden agregarse aquí
     return corrected
 
+async def resolve_lec_domain(original_url: str) -> str:
+    if not original_url:
+        return None
+
+    # 1 — Probar el link tal cual
+    if check_alive(original_url):
+        return original_url
+
+    # 2 — Intentar con dominios alternativos
+    try:
+        parsed = urlparse(original_url)
+        original_domain = parsed.netloc.lower()
+    except:
+        return original_url
+
+    for dom in LEC_DOMAINS:
+        if dom == original_domain:
+            continue
+
+        test_url = url_with_domain(original_url, dom)
+        if check_alive(test_url):
+            return test_url
+
+    return original_url
+    
 # --- Construcción del diccionario final de variables ---
 async def build_variables_for_channel(ctx: commands.Context, channel_input: str) -> Dict[str, Any]:
     """
@@ -2202,7 +2257,7 @@ async def table(ctx):
 
 # Comando !acceso
 @bot.command()
-@commands.has_any_role(1357527939226533920, 1463686138689622250) ##ADMIN/QC
+@commands.has_any_role(1357527939226533920, 1463686138689622250, 1489027695307260006, 1476769715006341323, 1489027850349576352) ##ADMIN/QC/HARINA/MANTEQUILLA/AZÚCAR
 async def acceso(ctx, user: discord.Member = None):
     """Otorga acceso de editor a un usuario según la lista USUARIOS."""
     if user is None:
@@ -2468,7 +2523,12 @@ async def update_cmd(ctx: commands.Context):
         if vars_dict.get("LINK_CATH"):
             resolved_cath = await resolve_cath_domain(vars_dict["LINK_CATH"])
             vars_dict["LINK_CATH"] = resolved_cath
-
+            
+        # 4.2 — Resolver link Lector
+        if vars_dict.get("LINK_LEC"):
+            resolved_lec = await resolve_lec_domain(vars_dict["LINK_LEC"])
+            vars_dict["LINK_LEC"] = resolved_lec
+            
         # 5) render de plantillas
         texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps, use_links)
         texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps, use_links)
