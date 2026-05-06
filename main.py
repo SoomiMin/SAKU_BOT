@@ -1412,34 +1412,6 @@ def normalize_lec_link(url_or_text: str) -> str:
         return url_or_text    
     corrected = url_or_text.replace("lectorjpg.com", "visorjpg.lat")
     # más reglas de normalización pueden agregarse aquí
-    return correctedasync def resolve_lec_domain(original_url: str) -> str:
-    if not original_url:
-        return None
-
-    if check_alive(original_url):
-        return original_url
-    try:
-        parsed = urlparse(original_url)
-        original_domain = parsed.netloc.lower()
-    except:
-        return original_url
-
-    for dom in LEC_DOMAINS:
-        if dom == original_domain:
-            continue
-
-        test_url = url_with_domain(original_url, dom)
-        if check_alive(test_url):
-            return test_url
-
-    return original_url
-    
-# Normalizar dominio Lector
-def normalize_lec_link(url_or_text: str) -> str:
-    if not url_or_text:
-        return url_or_text    
-    corrected = url_or_text.replace("lectorjpg.com", "visorjpg.lat")
-    # más reglas de normalización pueden agregarse aquí
     return corrected
 
 # --- Construcción del diccionario final de variables ---
