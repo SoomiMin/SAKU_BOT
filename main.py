@@ -71,6 +71,7 @@ SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
+ultimo_calendario_run = None
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
@@ -492,6 +493,77 @@ async def revisar_asignaciones_atrasadas():
                 proceso=proceso,
                 emoji=cfg["emoji"]
             )
+@tasks.loop(minutes=10)
+async def calendario_window():
+    global ultimo_calendario_run
+
+    now = datetime.now()
+    today_key = now.date()
+
+    # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
+    if ultimo_calendario_run == today_key:
+        return
+
+    # 🎯 ventana: entre 07:00 y 08:00
+    if not (7 <= now.hour < 8):
+        return
+
+    print("🌸 Ejecutando calendario (ventana 7-8am)")
+    await revisar_calendario()
+
+    ultimo_calendario_run = today_key@tasks.loop(minutes=10)
+    async def calendario_window():
+        global ultimo_calendario_run
+
+        now = datetime.now()
+        today_key = now.date()
+
+        # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
+        if ultimo_calendario_run == today_key:
+            return
+
+        # 🎯 ventana: entre 07:00 y 08:00
+        if not (7 <= now.hour < 8):
+            return
+
+        print("🌸 Ejecutando calendario (ventana 7-8am)")
+        await revisar_calendario()
+
+        ultimo_calendario_run = today_key
+@tasks.loop(minutes=10)
+async def calendario_window():
+    global ultimo_calendario_run
+
+    now = datetime.now()
+    today_key = now.date()
+    # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
+    if ultimo_calendario_run == today_key:
+        return
+
+    # 🎯 ventana: entre 07:00 y 08:00
+    if not (7 <= now.hour < 8):
+        return
+
+    print("🌸 Ejecutando calendario (ventana 7-8am)")
+    await revisar_calendario()
+    ultimo_calendario_run = today_key@tasks.loop(minutes=10)
+    async def calendario_window():
+        global ultimo_calendario_run
+
+        now = datetime.now()
+        today_key = now.date()
+
+        # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
+        if ultimo_calendario_run == today_key:
+            return
+
+        # 🎯 ventana: entre 07:00 y 08:00
+        if not (7 <= now.hour < 8):
+            return
+
+        print("🌸 Ejecutando calendario (ventana 7-8am)")
+        await revisar_calendario()
+        ultimo_calendario_run = today_key
 
 def tiene_rol(ctx, claves_roles):
     user_roles = [role.id for role in ctx.author.roles]
@@ -1689,6 +1761,8 @@ f"🎀━━━━━━━━━━━━━━━━━🎀"
 @bot.event
 async def on_ready():
     revisar_asignaciones_atrasadas.start()
+    if not calendario_window.is_running():
+        calendario_window.start()
     print(f"✨ Bot en línea como {bot.user}")
 # Bloqueo global para registros
 registro_lock = asyncio.Lock()
@@ -4430,6 +4504,95 @@ async def asset(ctx):
                 valueInputOption="RAW",
                 body={"values": [[usuario_guardado]]}
             ).execute()
+
+# Comando !calendar    
+@bot.command(name="calendar")
+async def calendar_cmd(ctx):
+
+    await revisar_calendario()
+    await ctx.send("### 🌸 Revisión de calendario completada.")
+
+async def revisar_calendario():
+
+    try:
+        result = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME2}!B:H"
+        ).execute()
+
+        rows = result.get("values", [])
+
+    except Exception as e:
+        print(f"❌ Error leyendo calendario: {e}")
+        return
+
+    canal_alertas = bot.get_channel(1504718483148116039)
+
+    if not canal_alertas:
+        print("❌ No se encontró el canal de alertas.")
+        return
+
+    hoy = datetime.now().date()
+
+    print("📅 Revisando calendario de RAWs...")
+
+    mensajes = []
+
+    for idx, row in enumerate(rows, start=1):
+
+        try:
+            row += [""] * 10
+
+            nombre_proyecto = row[0].strip()
+            fecha_base_str = row[5].strip()
+            ciclo_str = row[6].strip()
+
+            if not nombre_proyecto or not fecha_base_str or not ciclo_str:
+                continue
+
+            fecha_base = datetime.strptime(
+                fecha_base_str,
+                "%d/%m/%Y"
+            ).date()
+
+            ciclo_m = int(ciclo_str)
+            ciclo = int(ciclo_str)+1
+            
+            dias_pasados = (hoy - fecha_base).days
+
+            if dias_pasados < 0:
+                continue
+
+            if dias_pasados % ciclo == 0:
+
+                canal_proyecto = discord.utils.get(
+                    bot.get_all_channels(),
+                    name=nombre_proyecto.replace("#", "").lower()
+                )
+
+                if canal_proyecto:
+                    nombre = canal_proyecto.mention
+                else:
+                    nombre = f"#{nombre_proyecto}"
+
+                mensajes.append(
+                    f"📢 ¡El proyecto {nombre} ha sido actualizado en su RAW original!\n"
+                    f"> 🗓️ *Actualiza cada {ciclo_m} días.*\n"
+                    "━━━━━━━━━━━━━━━━━"
+                )
+
+        except Exception as e:
+            print(f"❌ Error en fila {idx}: {e}")
+
+    # 🔥 ENVIAR TODO JUNTO
+    if mensajes:
+
+        final_msg = (
+            "# **¡Actualización de RAWS!**\n\n"
+            + "\n".join(mensajes)
+        )
+
+        await canal_alertas.send(final_msg)
 
 # Ejecutar bot
 bot.run(TOKEN)
