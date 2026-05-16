@@ -493,14 +493,17 @@ async def revisar_asignaciones_atrasadas():
                 proceso=proceso,
                 emoji=cfg["emoji"]
             )
+            
 @tasks.loop(minutes=10)
 async def calendario_window():
     global ultimo_calendario_run
 
-    now = datetime.now()
+    # 🔥 Ajuste manual de zona horaria
+    now = datetime.now() - timedelta(hours=8)
+
     today_key = now.date()
 
-    # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
+    # 🔒 evita doble ejecución
     if ultimo_calendario_run == today_key:
         return
 
@@ -511,60 +514,8 @@ async def calendario_window():
     print("🌸 Ejecutando calendario (ventana 7-8am)")
     await revisar_calendario()
 
-    ultimo_calendario_run = today_key@tasks.loop(minutes=10)
-    async def calendario_window():
-        global ultimo_calendario_run
-
-        now = datetime.now()
-        today_key = now.date()
-
-        # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
-        if ultimo_calendario_run == today_key:
-            return
-
-        # 🎯 ventana: entre 07:00 y 08:00
-        if not (7 <= now.hour < 8):
-            return
-
-        print("🌸 Ejecutando calendario (ventana 7-8am)")
-        await revisar_calendario()
-
-        ultimo_calendario_run = today_key
-@tasks.loop(minutes=10)
-async def calendario_window():
-    global ultimo_calendario_run
-
-    now = datetime.now()
-    today_key = now.date()
-    # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
-    if ultimo_calendario_run == today_key:
-        return
-
-    # 🎯 ventana: entre 07:00 y 08:00
-    if not (7 <= now.hour < 8):
-        return
-
-    print("🌸 Ejecutando calendario (ventana 7-8am)")
-    await revisar_calendario()
-    ultimo_calendario_run = today_key@tasks.loop(minutes=10)
-    async def calendario_window():
-        global ultimo_calendario_run
-
-        now = datetime.now()
-        today_key = now.date()
-
-        # 🔒 evita doble ejecución incluso si reinicia o entra en ventana varias veces
-        if ultimo_calendario_run == today_key:
-            return
-
-        # 🎯 ventana: entre 07:00 y 08:00
-        if not (7 <= now.hour < 8):
-            return
-
-        print("🌸 Ejecutando calendario (ventana 7-8am)")
-        await revisar_calendario()
-        ultimo_calendario_run = today_key
-
+    ultimo_calendario_run = today_key
+        
 def tiene_rol(ctx, claves_roles):
     user_roles = [role.id for role in ctx.author.roles]
     roles_validos = []
