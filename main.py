@@ -4437,7 +4437,7 @@ async def asset(ctx):
         col_estado, col_user = col_map[proceso]
 
         for fila_index, row in seleccion_caps:
-            fila_real = fila_index + 1
+            fila_real = fila_index
 
             # Estado
             sheet.values().update(
