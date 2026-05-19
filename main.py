@@ -4437,7 +4437,7 @@ async def asset(ctx):
         col_estado, col_user = col_map[proceso]
 
         for fila_index, row in seleccion_caps:
-            fila_real = fila_index
+            fila_real = fila_index+1
 
             # Estado
             sheet.values().update(
@@ -4507,7 +4507,7 @@ async def revisar_calendario():
             ).date()
 
             ciclo_m = int(ciclo_str)
-            ciclo = int(ciclo_str)+1
+            ciclo = int(ciclo_str)+2
             
             dias_pasados = (hoy - fecha_base).days
 
