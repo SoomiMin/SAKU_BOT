@@ -4507,7 +4507,7 @@ async def revisar_calendario():
             ).date()
 
             ciclo_m = int(ciclo_str)
-            ciclo = int(ciclo_str)+2
+            ciclo = int(ciclo_str)
             
             dias_pasados = (hoy - fecha_base).days
 
