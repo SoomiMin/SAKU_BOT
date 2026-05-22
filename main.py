@@ -828,10 +828,19 @@ def url_with_domain(url: str, new_domain: str) -> str:
     return urlunparse((p.scheme, new_domain, p.path, "", "", ""))
 
 def check_alive(url: str, timeout=10):
-    """Revisa si un URL responde correctamente sin romper el flujo."""
     try:
         r = requests.get(url, timeout=timeout)
-        return r.status_code == 200
+
+        if r.status_code != 200:
+            return False
+
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # comprobar que existan capítulos reales
+        blocks = soup.select("a.group.relative.flex")
+
+        return len(blocks) > 0
+
     except:
         return False
 
