@@ -3495,7 +3495,8 @@ async def check(ctx):
             return await ctx.send("😔 No hay capítulos disponibles para QC en este momento.")
 
         # Guardar @usuario en columna Y
-        nombre_visible = f"@{ctx.author.display_name}"
+        fecha_actual = datetime.now().strftime("%m/%d/%Y")
+        nombre_visible = f"@{ctx.author.display_name} - {fecha_actual}"
         for fila_index, _, _ in disponibles:
             sheet_row_number = fila_index + 2
             updates.append({
