@@ -1590,6 +1590,7 @@ def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
     titulo = safe("TITULO") or "[SIN_TITULO]"
 
     return (
+f"# @everyone,\n"
 f"🌹 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 🌹\n"
 f"## ༺📘༻ **{titulo}** ༺📘༻\n\n"
 f"🖋 {caps_word} {cap_text}\n\n"
