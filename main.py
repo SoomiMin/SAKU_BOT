@@ -8,13 +8,15 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
-from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urlunparse
 from discord.ext import commands, tasks
 from googleapiclient.errors import HttpError
 import traceback
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import io
+import aiohttp
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -71,11 +73,11 @@ SHEET_NAME2 = os.getenv("SHEET_NAME2")
 SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
+PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
 ultimo_calendario_run = None
 
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
-
 creds = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE,
     scopes=[
@@ -92,31 +94,24 @@ sheet = sheet_service.spreadsheets()
 def canal_permitido(nombre_comando):
     async def predicate(ctx):
         canales = CANALES_COMANDOS.get(nombre_comando, [])
-
         if not canales:
             return True
-
         if ctx.channel.id not in canales:
             await ctx.send("🌸 Lo siento amor, no puedes usar este comando aquí.")
             return False
-
         return True
-
     return commands.check(predicate)
     
 def rol_permitido(nombre_comando):
     async def predicate(ctx):
         roles = ROLES_COMANDOS.get(nombre_comando, [])
-
         if not roles:
             return True
 
         if not any(role.id in roles for role in ctx.author.roles):
             await ctx.send("🌸 No puedes usar este comando ya que no tienes el rol adecuado, cielito.")
             return False
-
         return True
-
     return commands.check(predicate)
 
 # Funciones de Saku_Registra
@@ -1225,7 +1220,223 @@ def obtener_color(dias_str, sitio):
         else:
             return 0xE74C3C
     pass
+# Funciones de Saku_Update
+PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
+def extraer_numeros(texto:str) -> List[int]:
+    nums = re.findall(r"\d+", texto)
+    return [int(n) for n in nums]
+def obtener_codigo_proyecto(channel_name: str) -> Optional[str]:
+    m = re.match(r"(\d{3})-", channel_name)
+    if m:
+        return m.group(1)
+    return None
+async def buscar_cover_global(
+    guild: discord.Guild,
+    project_channel: discord.TextChannel,
+    numeros: List[int]
+) -> Optional[str]:
+    covers_channel = guild.get_channel(PROJECT_COVERS_CHANNEL_ID)
 
+    if covers_channel is None:
+        return None
+    codigo = obtener_codigo_proyecto(project_channel.name)
+
+    if codigo is None:
+        return None
+
+    threads = list(covers_channel.threads)
+    async for thread in covers_channel.archived_threads(limit=None):
+        threads.append(thread)
+    hilo = None
+
+    for thread in threads:
+
+        if thread.name.startswith(f"{codigo}-"):
+            hilo = thread
+            break
+
+    if hilo is None:
+        print(f"❌ No existe hilo para el proyecto {codigo}.")
+        return None
+
+    encontrados = []
+    async for msg in hilo.history(limit=None, oldest_first=True):
+        contenido = msg.content or ""
+        if not msg.attachments:
+            continue
+        nums_msg = extraer_numeros(contenido)
+        if not nums_msg:
+            continue
+        if not set(nums_msg).intersection(numeros):
+            continue
+        for att in msg.attachments:
+            if not att.filename.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                continue
+            encontrados.append(
+                (
+                    msg.created_at,
+                    att.url
+                )
+            )
+    if not encontrados:
+        return None
+    encontrados.sort(
+        key=lambda x: x[0],
+        reverse=True
+    )
+    return encontrados[0][1]    
+async def descargar_cover(url: str) -> Optional[str]:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.read()
+                ext = url.split("?")[0].split(".")[-1].lower()
+                if ext not in ["jpg", "jpeg", "png", "webp"]:
+                    ext = "png"
+                path = f"temp_cover.{ext}"
+                with open(path, "wb") as f:
+                    f.write(data)
+                return path
+    except:
+        return None
+def pegar_cover_en_banner(base: Image.Image, cover_path: str):
+    try:
+        cover = Image.open(cover_path).convert("RGBA")
+        cover = cover.resize((350, 350), Image.LANCZOS)
+        mask = Image.new("L", (350, 350), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle([(0, 0), (349, 349)], radius=10, fill=255)
+        shadow = Image.new("RGBA", (390, 390), (0, 0, 0, 0))
+        shadow_mask = Image.new("L", (390, 390), 0)
+        d = ImageDraw.Draw(shadow_mask)
+        d.rounded_rectangle(
+            (20,20,369,369),
+            radius=10,
+            fill=110
+        )
+        shadow.putalpha(shadow_mask)
+        shadow = shadow.filter(ImageFilter.GaussianBlur(12))
+        base.paste(shadow, (380,115), shadow)
+        cover.putalpha(mask)
+        base.paste(cover, (400, 135), cover) ##antes 130
+    except Exception:
+        pass
+def draw_glow_text(base, pos, text, font,
+       text_color=(255,255,255,255),
+       glow_color=(255,255,255,180),
+       blur=8):
+    glow = Image.new("RGBA", base.size, (0,0,0,0))
+    d = ImageDraw.Draw(glow)
+    d.text(pos, text, font=font, fill=glow_color)
+    glow = glow.filter(ImageFilter.GaussianBlur(blur))
+    base.alpha_composite(glow)
+    d = ImageDraw.Draw(base)
+    d.text(pos, text, font=font, fill=text_color)
+TEXT_AREA_X = 380 #aantes 320
+BANNER_W, BANNER_H = 775, 500
+TEXT_AREA_W = BANNER_W - TEXT_AREA_X
+def font1(size, bold=False, italic=False):
+    try:
+        path = "fonts/sephora.ttf"
+        return ImageFont.truetype(path, size)
+    except Exception as e:
+        print("⚠ Error cargando fuente:", e)
+        return ImageFont.load_default()
+def font2(size, bold=False, italic=False):
+    try:
+        path = "fonts/Moonstaire.ttf"
+        return ImageFont.truetype(path, size)
+    except Exception as e:
+        print("⚠ Error cargando fuente:", e)
+        return ImageFont.load_default()
+def resize_cover(img, w, h):
+    scale = max(w / img.width, h / img.height)
+    return img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
+def crop_center(img, w, h):
+    left = (img.width - w) // 2
+    top = (img.height - h) // 2
+    return img.crop((left, top, left + w, top + h))
+def get_text_x_center_zone(draw, text, font, start_x, width):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    return start_x + (width - text_width) // 2
+def generate_update_banner(portada_path, cap_text, caps_word, palabra_banner, cover_path: Optional[str] = None):
+    base = Image.new("RGBA", (BANNER_W, BANNER_H), (0, 0, 0, 255))
+    # ---------------- Fondo blur ----------------
+    bg = Image.open(portada_path).convert("RGBA")
+    bg = resize_cover(bg, BANNER_W, BANNER_H)
+    bg = crop_center(bg, BANNER_W, BANNER_H)
+    bg = bg.filter(ImageFilter.GaussianBlur(5))
+    alpha = bg.split()[3]
+    alpha = alpha.point(lambda p: int(p * 0.5))
+    bg.putalpha(alpha)
+    base = Image.alpha_composite(base, bg)
+    # ---------------- Portada izquierda ----------------
+    portada = Image.open(portada_path).convert("RGBA")
+    scale = BANNER_H / portada.height
+    portada = portada.resize((int(portada.width * scale), BANNER_H), Image.LANCZOS)
+    base.paste(portada, (0, 0), portada)
+    # ---------------- ¿Existe cover? ------------------
+    has_cover = cover_path and os.path.exists(cover_path)
+    if has_cover:
+        font_title = font1(78, bold=True)
+        font_caps = font2(42, italic=True)
+        title_x = 395
+        caps_x = 427
+    else:
+        font_title = font1(65, bold=True)   # un poco más grande
+        font_caps = font2(50, italic=True)
+        title_x = 427  # más centrado hacia la derecha
+        caps_x = 450
+    # ---------------- Texto ----------------
+    draw = ImageDraw.Draw(base)
+    if has_cover:
+        draw_glow_text(
+            base,
+            (title_x, 15),
+            "Actualización",
+            font_title,
+            blur=6
+        )
+        draw_glow_text(
+            base,
+            (caps_x, 85),
+            f"{palabra_banner} {cap_text}",
+            font_caps,
+            blur=4
+        )
+    else:
+        title_text = "¡Ding Dong,\nactualización!"
+        caps_text = f"{palabra_banner} {cap_text}"
+        title_x = get_text_x_center_zone(draw, title_text, font_title, TEXT_AREA_X, TEXT_AREA_W)
+        caps_x = get_text_x_center_zone(draw, caps_text, font_caps, TEXT_AREA_X, TEXT_AREA_W)
+        draw_glow_text(
+            base,
+            (title_x, 75),
+            title_text,
+            font_title,
+            blur=6
+        )
+
+        draw_glow_text(
+            base,
+            (caps_x, 300),
+            caps_text,
+            font_caps,
+            blur=4
+        )
+    #--------------- Cover personaje (si existe) ----------------
+    if cover_path and os.path.exists(cover_path):
+        pegar_cover_en_banner(base, cover_path)
+    # ---------------- Export ----------------
+    output = io.BytesIO()
+    base.convert("RGB").save(output, format="PNG")
+    output.seek(0)
+    return output
 # --- Constantes / variables fijas ---
 LINK_TELE = os.getenv("LINK_TELEGRAM", "https://t.me/+voe0LK-TSzA1NjUx")
 LINK_DIS  = os.getenv("LINK_DISCORD", "https://discord.gg/NRdjpBFy9E")
@@ -1381,7 +1592,15 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                     elif valor and not found["LINK_COL"]:
                         found["LINK_COL"] = valor
     return found
-
+async def buscar_portada(channel):
+    async for msg in channel.pins():
+        if (msg.content or "").strip().upper() != "PORTADA":
+            continue
+        if not msg.attachments:
+            print("⚠️ No tiene adjuntos.")
+            return None
+        return msg.attachments[0]
+    return None
 async def resolve_cath_domain(original_url: str) -> str:
     """
     Recibe un URL tomado del pin (LINK_CATH) y determina cuál dominio Catharsis funciona.
@@ -2499,71 +2718,77 @@ async def gen(ctx):
 @bot.command(name="update")
 @canal_permitido("update")
 @commands.has_guild_permissions(send_messages=True)
-async def update_cmd(ctx: commands.Context):
-    """
-    Flujo conversacional simple:
-     1) Pedir canal (#name o mención)
-     2) Preguntar si es CAPÍTULO o CAPÍTULOS
-     3) Pedir texto del capítulo o rango
-     4) Construir variables (sheet + pins)
-     5) Renderizar plantilla_fb (preview)
-    """
+async def updater_cmd(ctx: commands.Context):
     author = ctx.author
     timeout = 120  # segundos para que responda en cada paso
-
     try:
         # 1) pedir canal
-        await ctx.send("Menciona el canal del que deseas plantilla de actualización con #")
-        msg1 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        await ctx.send(
+            "Menciona el canal del que deseas plantilla de actualización con #"
+        )
+        msg1 = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m: m.author == author and m.channel == ctx.channel,
+        )
         channel_input = msg1.content.strip()
-
         # 2) pedir singular/plural
         await ctx.send("`1` para **CAPÍTULO**\n`2` para **CAPÍTULOS**.")
-        msg2 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        msg2 = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m: m.author == author and m.channel == ctx.channel,
+        )
         choice = msg2.content.strip()
         if choice not in ("1", "2"):
             await ctx.send("Entrada no válida. Se asumirá *CAPÍTULO* (singular).")
             choice = "1"
-
         if choice == "1":
             palabra_caps = "𝓒𝓪𝓹𝓲𝓽𝓾𝓵𝓸"
+            palabra_banner = "Capítulo"
         else:
             palabra_caps = "𝓒𝓪𝓹𝓲𝓽𝓾𝓵𝓸𝓼"
-
+            palabra_banner = "Capítulos"
         # 3) pedir el texto del capítulo/rango
-        await ctx.send("Escribe el número o texto del capítulo (ej: `23`, `10 al 15`, `Especial 1`, `12 y 13`):")
-        msg3 = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        await ctx.send(
+            "Escribe el número o texto del capítulo (ej: `23`, `10 al 15`, `Especial 1`, `12 y 13`):"
+        )
+        msg3 = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m: m.author == author and m.channel == ctx.channel,
+        )
         cap_text = msg3.content.strip()
-
-        # NUEVA PREGUNTA
+        # 3.1) consulta de enlaces
         await ctx.send("¿Desea compartir enlaces directos?\n`1` Sí\n`2` No")
-        msg_links = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        msg_links = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m: m.author == author and m.channel == ctx.channel,
+        )
         choice_links = msg_links.content.strip()
-
         use_links = True if choice_links == "1" else False
-
         # 4) construir variables
         await ctx.send("🔎 Buscando datos en la hoja y pins del canal...")
         try:
             vars_dict = await build_variables_for_channel(ctx, channel_input)
         except ValueError as e:
             if str(e) == "CANAL_NO_ENCONTRADO":
-                await ctx.send("❌ No fue posible encontrar el canal indicado en los servidores del bot. Revisa que el canal exista y que esté en el mismo servidor.")
+                await ctx.send(
+                    "❌ No fue posible encontrar el canal indicado en los servidores del bot. Revisa que el canal exista y que esté en el mismo servidor."
+                )
                 return
             else:
                 await ctx.send(f"❌ Error inesperado localizando el canal: {e}")
                 return
-
         # 4.1 — Resolver link Catharsis con dominios alternativos si el fijado falla
         if vars_dict.get("LINK_CATH"):
             resolved_cath = await resolve_cath_domain(vars_dict["LINK_CATH"])
             vars_dict["LINK_CATH"] = resolved_cath
-            
         # 4.2 — Resolver link Lector
         if vars_dict.get("LINK_LEC"):
             resolved_lec = await resolve_lec_domain(vars_dict["LINK_LEC"])
             vars_dict["LINK_LEC"] = resolved_lec
-            
         # 5) render de plantillas
         texto = render_plantilla_fb(vars_dict, cap_text, palabra_caps, use_links)
         texto_dis = render_plantilla_dis(vars_dict, cap_text, palabra_caps, use_links)
@@ -2572,31 +2797,51 @@ async def update_cmd(ctx: commands.Context):
         texto_eter = render_plantilla_eter(vars_dict, cap_text, palabra_caps)
         texto_lec = render_plantilla_lec(vars_dict, cap_text, palabra_caps)
         texto_col = render_plantilla_col(vars_dict, cap_text, palabra_caps)
-
         # 6) reportar estado de variables clave para depuración
         status_lines = []
         status_lines.append(f"Canal detectado: `{vars_dict.get('CHANNEL_NAME')}`")
         # sheet presence
         if vars_dict.get("TITULO") and vars_dict.get("SINOPSIS"):
-            status_lines.append("✅ Datos encontrados en Google Sheets (TÍTULO y SINOPSIS).")
+            status_lines.append(
+                "✅ Datos encontrados en Google Sheets (TÍTULO y SINOPSIS)."
+            )
         else:
-            status_lines.append("⚠ Datos incompletos en Google Sheets (TÍTULO/SINOPSIS faltantes).")
-
+            status_lines.append(
+                "⚠ Datos incompletos en Google Sheets (TÍTULO/SINOPSIS faltantes)."
+            )
         # pins presence
         pins_info = []
         for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
             pins_info.append(f"{k}: {vars_dict.get(k) if vars_dict.get(k) else '[NO]'}")
-
         status_text = "\n".join(status_lines + ["Pins encontrados:"] + pins_info)
-
-        canal_real = vars_dict.get("CHANNEL")  # este es el canal real ya encontrado
+        canal_real = vars_dict.get("CHANNEL_OBJ")  # este es el canal real ya encontrado
         pins = await read_channel_pins(canal_real)
-        LINK_CATH = pins.get("LINK_CATH")
+        portada = await buscar_portada(vars_dict["CHANNEL_OBJ"])
+        if portada:
+            await portada.save("temp.jpg")
+            numeros = extraer_numeros(cap_text)
+            cover_temp_path = None
+            try:
+                cover_url = await buscar_cover_global(
+                    guild=vars_dict["CHANNEL_OBJ"].guild,
+                    project_channel=vars_dict["CHANNEL_OBJ"],
+                    numeros=numeros
+                )
 
+                if cover_url:
+                    cover_temp_path = await descargar_cover(cover_url)
+            except Exception as e:
+                print(f"Error buscando cover: {e}")
+            banner = generate_update_banner("temp.jpg", cap_text, palabra_caps, palabra_banner, cover_temp_path)
+            file = discord.File(fp=banner, filename="update.png")
+            await ctx.send("🖼️ Aquí tienes el banner:", file=file)
+        else:
+            print("❌ No se encontró portada.")
+        LINK_CATH = pins.get("LINK_CATH")
         if LINK_CATH:
             LINK_CATH = await resolve_cath_domain(LINK_CATH)
-
         # 7) enviar preview y status
+
         await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
         await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
         await ctx.send("👇 **Previsualización DISCORD**\n\n" + "```" + texto_dis + "```") #siempre
@@ -2620,15 +2865,16 @@ async def update_cmd(ctx: commands.Context):
                         f"## **{cap_text}**\n\n"
                         f"Los enlaces de lectura directos se encuentran en los **mensajes fijados del canal**.\n*Muchas gracias a todos los roles que participaron para culminar esta actualización.*"
                     ),
-                    color=0xFFB6C1
+                    color=0xFFB6C1,
                 )
                 embed.set_footer(text="ଘ(˵╹-╹)━☆⋆ ˚｡⋆୨୧˚ 🌸SAKU_BOT🌸 ˚୨୧⋆｡˚ ⋆")
                 await canal_real.send("### ¡Habemus actualización!", embed=embed)
         except Exception as e:
             print("⚠ Error enviando anuncio al canal:", e)
-
     except asyncio.TimeoutError:
-        await ctx.send(f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`.")
+        await ctx.send(
+            f"{author.mention} — tiempo excedido. Si quieres intentamos de nuevo con `!update`."
+        )
     except Exception as e:
         print("Error en comando !update:", e)
         await ctx.send(f"❌ Ocurrió un error inesperado: {e}")
