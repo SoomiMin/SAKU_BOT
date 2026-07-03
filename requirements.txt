@@ -18,6 +18,7 @@ aiohttp==3.10.10
 tqdm==4.67.1
 colorama==0.4.6
 packaging==24.1
+Pillow==11.2.1
 
 # (Opcional, solo si usarás endpoints o keepalive)
 # flask==3.1.2
