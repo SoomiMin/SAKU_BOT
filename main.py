@@ -1593,7 +1593,8 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                         found["LINK_COL"] = valor
     return found
 async def buscar_portada(channel):
-    async for msg in channel.pins():
+    pins = await channel.pins()
+    for msg in pins:
         if (msg.content or "").strip().upper() != "PORTADA":
             continue
         if not msg.attachments:
