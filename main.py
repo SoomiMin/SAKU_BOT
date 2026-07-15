@@ -854,20 +854,44 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
-            h1_blocks = soup.find_all("h1", class_="font-semibold text-medium")
             caps = "N/A"
             actual = "N/A"
 
-            for h1 in h1_blocks:
-                text = h1.get_text(strip=True)
-                div = h1.find_next_sibling("div")
-                if div and div.p:
-                    valor = div.p.get_text(strip=True)
-                    if "Capítulos" in text:
-                        caps = valor
-                    elif "Última actualización" in text:
-                        actual = valor
+            # =====================================================
+            # MÉTODO ANTIGUO
+            # =====================================================
+            h1_blocks = soup.find_all("h1", class_="font-semibold text-medium")
 
+            if h1_blocks:
+                for h1 in h1_blocks:
+                    texto = h1.get_text(strip=True)
+                    div = h1.find_next_sibling("div")
+
+                    if div and div.p:
+                        valor = div.p.get_text(strip=True)
+
+                        if "Capítulos" in texto:
+                            caps = valor
+
+                        elif "Última actualización" in texto:
+                            actual = valor
+
+            # =====================================================
+            # MÉTODO NUEVO (Beta)
+            # =====================================================
+            if caps == "N/A" and actual == "N/A":
+                for li in soup.find_all("li"):
+                    texto = li.get_text(" ", strip=True)
+
+                    if texto.startswith("Capítulos:"):
+                        caps = texto.replace("Capítulos:", "").strip()
+
+                    elif texto.startswith("Última actualización:"):
+                        actual = texto.replace("Última actualización:", "").strip()
+
+            # =====================================================
+            # Ajuste para preestrenos
+            # =====================================================
             if preestreno:
                 try:
                     caps_num = int(caps)
@@ -886,14 +910,14 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
                 print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
                 time.sleep(delay)
                 continue
+
             return f"❌ Error HTTP: {e}"
+
         except Exception as e:
             print(f"⚠ Intento {intento}/{retries} falló: {e}")
             time.sleep(delay)
             continue
-
     return "❌ No se pudo acceder a EternalMangas después de varios intentos."
-    pass
 
 def evento_lec(url, preestreno=False, retries=3, delay=5):
     # ---------- 1) Intento: usar el link tal como viene ----------
