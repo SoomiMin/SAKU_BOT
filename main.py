@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 from googleapiclient.errors import HttpError
 import traceback
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import io
+import io, csv
 import aiohttp
 
 # 💖 Editado por Rami
@@ -810,12 +810,41 @@ CATH_DOMAINS = [
     "catharsisworld.dig-it.info",
     "catharsisworld.vxviral.xyz",
     "catharsisworld.lat",
-    "catharsisworld.online"
+    "catharsisworld.online",
+    "newcatharsis.dig-it.info"
 ]
 LEC_DOMAINS = [
     "lectorjpg.com",
     "visorjpg.lat"
 ]
+
+def leer_csv_catharsis(ruta_csv):
+    """
+    Lee el reporte CSV de Catharsis y devuelve:
+    {
+        "CATH_ID": "capítulos"
+    }
+
+    El módulo csv maneja correctamente los títulos que contienen
+    saltos de línea dentro de comillas.
+    """
+    datos = {}
+
+    try:
+        with open(ruta_csv, "r", encoding="utf-8-sig", newline="") as archivo:
+            lector = csv.DictReader(archivo, delimiter=";")
+            for fila in lector:
+                cath_id = str(fila.get("ID", "")).strip()
+                capitulos = str(fila.get("Capítulos", "")).strip()
+                if not cath_id:
+                    continue
+                if not capitulos:
+                    capitulos = "N/D"
+                datos[cath_id] = capitulos
+        return datos
+    except Exception as e:
+        print(f"❌ Error leyendo CSV de Catharsis: {e}")
+        raise
 
 def url_with_domain(url: str, new_domain: str) -> str:
     """Reemplaza el dominio de un URL manteniendo esquema y path."""
@@ -1014,169 +1043,248 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             continue
 
     return "❌ No se pudo acceder a Lector después de varios intentos."
-
-def evento_cath(url, preestreno=False, retries=3, delay=5):
-    # ---------- 1) Intento: usar el link tal como viene ----------
-    if not check_alive(url):
-
-        # ---------- 2) Intento: probar todos los dominios conocidos ----------
-        dominio_actual = urlparse(url).netloc
-
-        for dom in CATH_DOMAINS:
-            if dom == dominio_actual:
-                continue  # ya lo probamos
-            alt_url = url_with_domain(url, dom)
-            if check_alive(alt_url):
-                url = alt_url
-                break
-        else:
-            print("❌ Ningún dominio Catharsis respondió.")
-            return "❌ Catharsis parece estar caído en todos los dominios."
-
-# 3 Extraer dominio final del URL ya corregido
+def evento_cath(canal, datos_csv=None):
     try:
-        dominio = url.split("/")[2]  # ejemplo: catharsisworld.vxviral.xyz
-    except:
-        dominio = "catharsisworld.vxviral.xyz"  # fallback seguro
+        range_name = f"{SHEET_NAME}!A2:L"
+        resp = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=range_name
+        ).execute()
 
+        values = resp.get("values", [])
+
+        for row in values:
+
+            # Columna B = proyecto/canal
+            if len(row) > 1 and row[1].strip().lower() == canal.strip().lower():
+
+                # =====================================================
+                # CATHARSIS DESDE CSV
+                # =====================================================
+                if datos_csv is not None:
+
+                    # Columna L = CATH_ID
+                    cath_id = row[11].strip() if len(row) > 11 else ""
+
+                    if cath_id and cath_id in datos_csv:
+
+                        cap = datos_csv[cath_id]
+
+                        return (
+                            f"CATHARSIS\n"
+                            f"> Capítulo: {cap}\n"
+                            f"> Actualizado: Desde archivo"
+                        )
+
+                    # El proyecto existe en LISTA pero no está
+                    # incluido en el CSV.
+                    print(
+                        f"⚠️ CATHARSIS: "
+                        f"'{canal}' tiene CATH_ID '{cath_id}', "
+                        f"pero no aparece en el CSV."
+                    )
+
+                    return (
+                        "CATHARSIS\n"
+                        "> Capítulo: N/D\n"
+                        "> Actualizado: Desde archivo"
+                    )
+
+                # =====================================================
+                # COMPORTAMIENTO NORMAL DE !SITIO
+                # =====================================================
+
+                # Columna D = capítulo Catharsis
+                cap = (
+                    row[3].strip()
+                    if len(row) > 3 and row[3].strip()
+                    else "N/D"
+                )
+
+                # Columna E = fecha Catharsis
+                fecha = (
+                    row[4].strip()
+                    if len(row) > 4 and row[4].strip()
+                    else "N/D"
+                )
+
+                return (
+                    f"CATHARSIS\n"
+                    f"> Capítulo: {cap}\n"
+                    f"> Actualizado: {fecha}"
+                )
+
+        # El enlace Catharsis existe en fijados,
+        # aunque el canal no esté en la hoja.
+        print(
+            f"⚠️ No se encontró el canal '{canal}' en la hoja. "
+            f"Se mostrará como N/D."
+        )
+
+        return (
+            "CATHARSIS\n"
+            "> Capítulo: N/D\n"
+            "> Actualizado: N/D"
+        )
+
+    except Exception as e:
+
+        print(
+            f"❌ Error leyendo Catharsis desde la hoja: {e}"
+        )
+
+        return (
+            "CATHARSIS\n"
+            "> Capítulo: N/D\n"
+            "> Actualizado: N/D"
+        )
+        
+def evento_capi(url, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/142.0.0.0 Safari/537.36",
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Referer": f"https://{dominio}/"
+        "Referer": "https://capibaratraductor.com/"
     }
-
-    cath_user = os.getenv("CATH_USER", "")
-    cath_pass = os.getenv("CATH_PASS", "")
-    cath_verif = os.getenv("CATH_VERIF", "1")
-
-    cookies = {"Verificación_De_Edad": cath_verif}
-    session = requests.Session()
-
-    if cath_user and cath_pass:
-        try:
-            login_url = f"https://{dominio}/login"
-            payload = {"username": cath_user, "password": cath_pass}
-            resp = session.post(login_url, data=payload, headers=headers, timeout=20)
-            if resp.status_code == 200:
-                print("✅ Login en Catharsis exitoso (usuario real).")
-            else:
-                print(f"⚠️ Login fallido ({resp.status_code}), se intentará solo con cookie de verificación.")
-        except Exception as e:
-            print(f"⚠️ Error durante login Catharsis: {e}")
 
     for intento in range(1, retries + 1):
         try:
-            response = session.get(url, headers=headers, cookies=cookies, timeout=15)
+            session = requests.Session()
+
+            # Cookie de verificación NSFW
+            session.cookies.set(
+                "nsfw",
+                "1",
+                domain="capibaratraductor.com",
+                path="/"
+            )
+
+            response = session.get(
+                url,
+                headers=headers,
+                timeout=20
+            )
+
             response.raise_for_status()
             response.encoding = "utf-8"
+
             soup = BeautifulSoup(response.text, "html.parser")
+            # BUSCAR TODOS LOS BLOQUES DE CAPÍTULOS
+            bloques = soup.select("a[href*='/chapters/']")
 
-            cap_elem = soup.select_one("ul#list-chapters span.text-md")
-            fecha_elem = soup.select_one("ul#list-chapters div.text-xs")
+            if not bloques:
+                print("⚠️ CAPIBARA: No se encontraron bloques de capítulos.")
+                return "❌ No se encontraron capítulos en CAPIBARA."
+            # BUSCAR EL CAPÍTULO MÁS ALTO
+            mejor_bloque = None
+            mejor_capitulo = -1
 
-            cap_text = cap_elem.get_text(strip=True) if cap_elem else "Desconocido"
-            fecha_text = fecha_elem.get_text(strip=True) if fecha_elem else "Desconocido"
+            for bloque in bloques:
 
-            cap_match = re.search(r'cap[ií]tulo\s*(\d+)', cap_text, re.I)
-            cap = cap_match.group(1) if cap_match else cap_text
+                texto_bloque = bloque.get_text(" ", strip=True)
 
-            if preestreno:
-                try:
-                    cap_num = int(cap)
-                    if cap_num > 0:
-                        cap_num -= 1
-                    cap = str(cap_num)
-                except:
-                    pass
+                match = re.search(
+                    r'cap[ií]tulo\s*(\d+)',
+                    texto_bloque,
+                    re.I
+                )
 
-            fecha_text = fecha_text.replace(" ago", "").strip()
-            fecha_text = fecha_text.replace("hours", "horas").replace("hour", "hora")
-            fecha_text = fecha_text.replace("days", "días").replace("day", "día")
-            fecha_text = fecha_text.replace("minutes", "minutos").replace("minute", "minuto")
+                if match:
+                    cap_num = int(match.group(1))
+
+                    if cap_num > mejor_capitulo:
+                        mejor_capitulo = cap_num
+                        mejor_bloque = bloque
+
+            if not mejor_bloque:
+                print("⚠️ CAPIBARA: Se encontraron bloques, pero no se pudo identificar ningún capítulo.")
+                return "❌ No se pudo identificar el capítulo en CAPIBARA."
+            # TEXTO COMPLETO DEL BLOQUE
+            texto_bloque = mejor_bloque.get_text(
+                " ",
+                strip=True
+            )
+            # CAPÍTULO
+            cap_match = re.search(
+                r'cap[ií]tulo\s*(\d+)',
+                texto_bloque,
+                re.I
+            )
+
+            if cap_match:
+                cap = cap_match.group(1)
+            else:
+                cap = "Desconocido"
+            # FECHA
+            # Primero intentamos encontrar "hace X ..."
+            fecha_match = re.search(
+                r'\bhace\s+(.+?)(?="|\s*Capítulo|\s*Compartir|\s*Leer|$)',
+                texto_bloque,
+                re.I
+            )
+
+            if fecha_match:
+                fecha_text = fecha_match.group(1).strip()
+            else:
+                # Fallback: buscar directamente el span que contiene "hace"
+                fecha_text = "Desconocido"
+
+                for span in mejor_bloque.find_all("span"):
+                    texto_span = span.get_text(" ", strip=True)
+
+                    if re.search(r'\bhace\s+', texto_span, re.I):
+                        fecha_text = texto_span.strip()
+                        break
+            # NORMALIZAR FECHA
+            fecha_text = fecha_text.replace("hace ", "").strip()
+
+            fecha_text = (
+                fecha_text
+                .replace("hours", "horas")
+                .replace("hour", "hora")
+                .replace("days", "días")
+                .replace("day", "día")
+                .replace("minutes", "minutos")
+                .replace("minute", "minuto")
+                .replace("months", "meses")
+                .replace("month", "mes")
+            )
 
             fecha_text = fecha_a_dias_atras(fecha_text)
+            return (
+                f"CAPIBARA\n"
+                f"> Capítulo: {cap}\n"
+                f"> Actualizado: {fecha_text}"
+            )
 
-            if cap == "Desconocido" and fecha_text == "Desconocido":
-                print("⚠️ No se pudieron detectar los selectores, HTML diferente o protección activa.")
-                return "❌ No se pudo leer la información de Catharsis."
-
-            return f"CATHARSIS\n> Capítulo: {cap}\n> Actualizado: {fecha_text}"
-
-        except Exception as e:
-            print(f"⚠ Error en evento_cath (intento {intento}): {e}")
-            time.sleep(delay)
-            continue
-
-    return "❌ No se pudo acceder a Catharsis después de varios intentos."
-    pass
-
-def evento_col(url, preestreno=False, retries=3, delay=5):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/142.0.0.0 Safari/537.36",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Referer": "https://colorcitoscan.com/"
-    }
-    for intento in range(1, retries + 1):
-        try:
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            response.encoding = "utf-8"
-            soup = BeautifulSoup(response.text, "html.parser")
-            # Seleccionar todos los bloques de capítulo
-            bloques = soup.select("div.w-full.grid.grid-cols-3 a")
-            if not bloques:
-                return "❌ No se encontraron capítulos en Colorcito."
-
-            def extraer_cap_num(bloque):
-                cap_elem = bloque.select_one("p.font-semibold")
-                if not cap_elem:
-                    return -1
-                cap_text = cap_elem.get_text(strip=True)
-                m = re.search(r'Cap\.?\s*(\d+)', cap_text, re.I)
-                return int(m.group(1)) if m else -1
-
-            # 🔥 buscar el bloque con mayor capítulo
-            mejor_bloque = max(bloques, key=extraer_cap_num)
-
-            cap_elem = mejor_bloque.select_one("p.font-semibold")
-            tiempo_elem = mejor_bloque.select("p.font-montserrat")
-            cap_text = cap_elem.get_text(strip=True) if cap_elem else "Desconocido"
-            tiempo_text = tiempo_elem[-1].get_text(strip=True) if tiempo_elem else "Desconocido"
-            # Extraer número de capítulo
-            cap_match = re.search(r'Cap\.?\s*(\d+)', cap_text, re.I)
-            cap = cap_match.group(1) if cap_match else cap_text
-            if preestreno:
-                try:
-                    cap_num = int(cap)
-                    if cap_num > 0:
-                        cap_num -= 1
-                    cap = str(cap_num)
-                except:
-                    pass
-            # Normalizar texto de tiempo como en cath
-            tiempo_text = tiempo_text.replace(" ago", "").strip()
-            tiempo_text = tiempo_text.replace("hours", "horas").replace("hour", "hora")
-            tiempo_text = tiempo_text.replace("days", "días").replace("day", "día")
-            tiempo_text = tiempo_text.replace("minutes", "minutos").replace("minute", "minuto")
-            # Función auxiliar que ya tienes
-            tiempo_text = fecha_a_dias_atras(tiempo_text)
-            return f"COLORCITO\n> Capítulo: {cap}\n> Actualizado: {tiempo_text}"
         except requests.exceptions.HTTPError as e:
+
             if response.status_code in [503, 429, 520]:
-                print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
+                print(
+                    f"⚠️ CAPIBARA intento "
+                    f"{intento}/{retries}: "
+                    f"{response.status_code} recibido, "
+                    f"reintentando en {delay}s..."
+                )
+
                 time.sleep(delay)
                 continue
+
             return f"❌ Error HTTP: {e}"
+
         except Exception as e:
-            print(f"⚠ Intento {intento}/{retries} falló: {e}")
+
+            print(
+                f"⚠️ CAPIBARA intento "
+                f"{intento}/{retries} falló: {e}"
+            )
+
             time.sleep(delay)
             continue
-    return "❌ No se pudo acceder a Colorcito después de varios intentos."
 
+    return "❌ No se pudo acceder a CAPIBARA después de varios intentos."
+    
 def fecha_a_dias_atras(fecha_str):
     fecha_str = fecha_str.strip().lower()
 
@@ -1246,6 +1354,8 @@ def obtener_color(dias_str, sitio):
     pass
 # Funciones de Saku_Update
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
+LOBOTOMIA = 1
+LOBOTOMIA_CATH_DOMAIN = "https://newcatharsis.dig-it.info"
 def extraer_numeros(texto:str) -> List[int]:
     nums = re.findall(r"\d+", texto)
     return [int(n) for n in nums]
@@ -1468,7 +1578,7 @@ LINK_DIS  = os.getenv("LINK_DISCORD", "https://discord.gg/NRdjpBFy9E")
 LINK_GLOBAL_ETER = "https://eternalmangas.org/"
 LINK_GLOBAL_CATH = "https://catharsisworld.com/"
 LINK_GLOBAL_LEC  = "https://lectorjpg.com/"
-LINK_GLOBAL_COL  = "https://colorcitoscan.com/"
+LINK_GLOBAL_COL  = "https://capibaratraductor.com/"
 
 # --- Helpers para Google Sheets ---
 def normalize_channel_name(ch: str) -> str:
@@ -1539,7 +1649,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
       - catharsis
       - eternal/eternalmangas
       - lectorjpg
-      - colorcitoscan
+      - capibaratraductor
     Devuelve dict con claves LINK_CATH, LINK_ETER, LINK_LEC, LINK_COL (valor string o None)
     """
     found = {
@@ -1571,7 +1681,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                 found["LINK_ETER"] = u
             if any(dom in lu for dom in LEC_DOMAINS) and not found["LINK_LEC"]:
                 found["LINK_LEC"] = u
-            if "colorcitoscan" in lu and not found["LINK_COL"]:
+            if "capibara" in lu and not found["LINK_COL"]:
                 found["LINK_COL"] = u
 
     # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
@@ -1626,6 +1736,50 @@ async def buscar_portada(channel):
             return None
         return msg.attachments[0]
     return None
+
+def lobotomizar_cath_link(original_url: str) -> str:
+    """
+    Convierte links antiguos de Catharsis al formato nuevo.
+
+    Antiguo:
+        https://catharsisworld.dig-it.info/serie/mi-manga/
+
+    Nuevo:
+        https://newcatharsis.dig-it.info/manga/mi-manga
+
+    Si el link YA pertenece a newcatharsis.dig-it.info,
+    se devuelve exactamente como está.
+    """
+
+    if not original_url:
+        return original_url
+
+    try:
+        parsed = urlparse(original_url)
+
+        # 🛑 Ya está en el sitio nuevo → no tocar
+        if parsed.netloc.lower() == "newcatharsis.dig-it.info":
+            return original_url
+
+        # Obtener la ruta sin / inicial/final
+        path = parsed.path.strip("/")
+
+        # Solo transformar el formato antiguo conocido:
+        # /serie/nombre-del-proyecto
+        if path.startswith("serie/"):
+            slug = path[len("serie/"):].strip("/")
+
+            if slug:
+                return f"{LOBOTOMIA_CATH_DOMAIN}/manga/{slug}"
+
+        # Si no coincide con el formato esperado,
+        # dejar el link original intacto.
+        return original_url
+
+    except Exception as e:
+        print(f"⚠️ Error lobotomizando Catharsis: {e}")
+        return original_url
+
 async def resolve_cath_domain(original_url: str) -> str:
     """
     Recibe un URL tomado del pin (LINK_CATH) y determina cuál dominio Catharsis funciona.
@@ -1776,10 +1930,10 @@ def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str
         if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
         if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
     else:
-        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en Catharsis!")
-        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en Eternal!")
-        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en LectorJPG!")
-        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en Colorcitos!")
+        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en CatharsisWorld!")
+        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
+        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
+        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
@@ -1824,10 +1978,10 @@ def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
         if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
         if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
     else:
-        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en Catharsis!")
-        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en Eternal!")
-        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en LectorJPG!")
-        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en Colorcitos!")
+        if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en CatharsisWorld!")
+        if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
+        if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
+        if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
@@ -1857,10 +2011,10 @@ def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
             v = vars_dict.get(k)
             if v: enlaces.append(v)
     else:
-        if vars_dict.get("LINK_CATH"): enlaces.append("¡Búscanos en Catharsis!")
-        if vars_dict.get("LINK_ETER"): enlaces.append("¡Búscanos en Eternal!")
-        if vars_dict.get("LINK_LEC"):  enlaces.append("¡Búscanos en LectorJPG!")
-        if vars_dict.get("LINK_COL"):  enlaces.append("¡Búscanos en Colorcitos!")
+        if vars_dict.get("LINK_CATH"): enlaces.append("¡Búscanos en CatharsisWorld!")
+        if vars_dict.get("LINK_ETER"): enlaces.append("¡Búscanos en EternalMangas!")
+        if vars_dict.get("LINK_LEC"):  enlaces.append("¡Búscanos en VisorJPG!")
+        if vars_dict.get("LINK_COL"):  enlaces.append("¡Búscanos en CapibaraTraductor!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "[No hay enlaces]"
 
@@ -2253,7 +2407,7 @@ async def sitio(ctx):
 
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
+        tasks.append(asyncio.to_thread(evento_cath, ctx.channel.name, getattr(ctx, "datos_csv", None)))
         task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
@@ -2271,14 +2425,12 @@ async def sitio(ctx):
         task_map[len(tasks)-1] = "lector"
     else:
         task_map["lector"] = "ND"
-
-    # --- COLORCITO ---
+    # --- CAPIBARA ---
     if pins_data["LINK_COL"]:
-        tasks.append(asyncio.to_thread(evento_col, pins_data["LINK_COL"], pins_data.get("PRE_COL", False)))
-        task_map[len(tasks)-1] = "col"
+        tasks.append(asyncio.to_thread(evento_capi, pins_data["LINK_COL"]))
+        task_map[len(tasks)-1] = "capi"
     else:
-        task_map["col"] = "ND"
-
+        task_map["capi"] = "ND"
     if not tasks:
         embed = discord.Embed(
             title="🌸 Saku_Search — *Sin enlaces encontrados*",
@@ -2320,7 +2472,7 @@ async def sitio(ctx):
             elif sitio == "lector":
                 resultado_dict["lector_cap"] = "N/A"
                 resultado_dict["lector_date"] = "N/A"
-            elif sitio == "col":
+            elif sitio == "capi":
                 resultado_dict["col_cap"] = "N/A"
                 resultado_dict["col_date"] = "N/A"
             continue
@@ -2346,13 +2498,13 @@ async def sitio(ctx):
             resultado_dict["lector_date"] = dias_texto
             sitio_nombre = "LECTORJPG"
 
-        elif sitio == "col":
+        elif sitio == "capi":
             resultado_dict["col_cap"] = cap_texto
             resultado_dict["col_date"] = dias_texto
-            sitio_nombre = "COLORCITO"
+            sitio_nombre = "CAPIBARA"
 
         # ✅ SOLO mostrar embed si hay link (o sea, si entró aquí)
-        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "COLORCITO": "🖍️"}[sitio_nombre]
+        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "CAPIBARA": "🐑"}[sitio_nombre]
 
         embed = discord.Embed(
             title=f"{sitio_icono} {sitio_nombre}",
@@ -2675,69 +2827,290 @@ async def acceso(ctx, user: discord.Member = None):
 @bot.command()
 @rol_permitido("gen")
 async def gen(ctx):
+
     if ctx.guild.id not in GUILD_IDS:
-        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-    await ctx.send("🔍 Procesando, porfavor espere...")
+        return await ctx.send(
+            "❌ Este comando no está autorizado en este servidor."
+        )
+
+    # ============================================================
+    # 1️⃣ SOLICITAR CSV
+    # ============================================================
+
+    await ctx.send(
+        "📎 **Necesito el reporte de Catharsis.**\n"
+        "Adjunta aquí el archivo `.csv` y envíalo en este canal.\n\n"
+        "🌸 El archivo debe ser el reporte de vistas de mangas."
+    )
+
+    def comprobar_csv(message):
+        return (
+            message.author.id == ctx.author.id
+            and message.channel.id == ctx.channel.id
+            and any(
+                archivo.filename.lower().endswith(".csv")
+                for archivo in message.attachments
+            )
+        )
+
     try:
-        # 1️⃣ Leer la columna B de la hoja LISTA (canales)
-        range_name = f"{SHEET_NAME}!B2:B"  # columna B desde fila 2
-        resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
-        canales = [row[0].strip() for row in resp.get("values", []) if row]
+        mensaje_csv = await bot.wait_for(
+            "message",
+            timeout=120,
+            check=comprobar_csv
+        )
 
-        if not canales:
-            return await ctx.send("❌ No se encontraron canales en la columna B.")
+    except asyncio.TimeoutError:
 
-        # 2️⃣ Enviar mensaje de progreso inicial
-        progress_msg = await ctx.send(f"🔄 Autollamado de sitios, revisando canales 0/{len(canales)}")
+        return await ctx.send(
+            "⏰ Se agotó el tiempo de espera. "
+            "No se recibió ningún archivo CSV."
+        )
 
-        # 3️⃣ Recorrer cada canal y ejecutar !sitio
-        for i, canal_nombre in enumerate(canales, start=1):
-            canal_obj = discord.utils.get(ctx.guild.channels, name=canal_nombre)
-            if not canal_obj:
-                await progress_msg.edit(content=f"⚠ Canal **{canal_nombre}** no encontrado. {i}/{len(canales)}")
-                await asyncio.sleep(1)
+    # ============================================================
+    # 2️⃣ DESCARGAR Y LEER CSV
+    # ============================================================
+
+    archivo_csv = next(
+        archivo
+        for archivo in mensaje_csv.attachments
+        if archivo.filename.lower().endswith(".csv")
+    )
+
+    await ctx.send(
+        f"📖 Leyendo **{archivo_csv.filename}**..."
+    )
+
+    ruta_csv = None
+
+    try:
+
+        # Descargar archivo a memoria
+        contenido_csv = await archivo_csv.read()
+
+        # Intentar UTF-8 con BOM
+        try:
+            texto_csv = contenido_csv.decode("utf-8-sig")
+
+        except UnicodeDecodeError:
+
+            # Fallback común para archivos exportados
+            texto_csv = contenido_csv.decode("latin-1")
+
+        # ========================================================
+        # Crear datos directamente desde el texto
+        # ========================================================
+
+        datos_csv = {}
+
+        lector_csv = csv.DictReader(
+            io.StringIO(texto_csv),
+            delimiter=";"
+        )
+
+        for fila in lector_csv:
+
+            cath_id = str(
+                fila.get("ID", "")
+            ).strip()
+
+            capitulos = str(
+                fila.get("Capítulos", "")
+            ).strip()
+
+            if not cath_id:
                 continue
 
-            # Actualizar mensaje de progreso
-            await progress_msg.edit(content=f"⏳ Procesando canal {i}/{len(canales)}: **{canal_nombre}**")
+            if not capitulos:
+                capitulos = "N/D"
 
-            # DummyCtx para invocar !sitio en el canal correcto
-            class DummyMessage:
-                def __init__(self, author, channel):
-                    self.author = author
-                    self.channel = channel
-                    self.attachments = []
+            datos_csv[cath_id] = capitulos
 
-            class DummyCtx:
-                def __init__(self, bot, channel, guild, author, send):
-                    self.bot = bot
-                    self.channel = channel
-                    self.guild = guild
-                    self.author = author
-                    self.send = send
-                    self.message = DummyMessage(author, channel)
-                    self.view = None
+        if not datos_csv:
 
-            dummy_ctx = DummyCtx(
-                bot=ctx.bot,
-                channel=canal_obj,
-                guild=ctx.guild,
-                author=ctx.author,
-                send=canal_obj.send  # ⚡ enviará embeds en el canal correcto
+            return await ctx.send(
+                "❌ El CSV no contiene datos válidos."
             )
 
-            await sitio.invoke(dummy_ctx)
-            await asyncio.sleep(3)  # espera de 3 segundos antes del siguiente canal
+        await ctx.send(
+            f"✅ CSV leído correctamente.\n"
+            f"📊 Se encontraron **{len(datos_csv)} proyectos**."
+        )
 
-        # 4️⃣ Finalizar mensaje de progreso
-        await progress_msg.edit(content=f"✅ Actualización completada: revisados {len(canales)}/{len(canales)} canales")
-
-        # 5️⃣ Llamar !table en el canal de invocación
-        await table.invoke(ctx)
+        print(
+            f"📊 CATHARSIS CSV: "
+            f"{len(datos_csv)} proyectos cargados."
+        )
 
     except Exception as e:
-        await ctx.send(f"❌ Error durante !gen: {e}")
-        print(f"❌ Error en comando !gen: {e}")
+
+        print(
+            f"❌ Error procesando CSV de Catharsis: {e}"
+        )
+
+        return await ctx.send(
+            f"❌ No pude interpretar el CSV.\n"
+            f"Error: `{e}`"
+        )
+
+    # ============================================================
+    # 3️⃣ LEER LISTA DE PROYECTOS
+    # ============================================================
+
+    await ctx.send(
+        "🔍 Procesando lista de proyectos..."
+    )
+
+    try:
+
+        range_name = f"{SHEET_NAME}!B2:B"
+
+        resp = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=range_name
+        ).execute()
+
+        canales = [
+            row[0].strip()
+            for row in resp.get("values", [])
+            if row
+        ]
+
+        if not canales:
+
+            return await ctx.send(
+                "❌ No se encontraron canales "
+                "en la columna B."
+            )
+
+    except Exception as e:
+
+        print(
+            f"❌ Error leyendo canales: {e}"
+        )
+
+        return await ctx.send(
+            f"❌ Error leyendo la hoja LISTA: `{e}`"
+        )
+
+    # ============================================================
+    # 4️⃣ MENSAJE DE PROGRESO
+    # ============================================================
+
+    progress_msg = await ctx.send(
+        f"🔄 Autollamado de sitios, "
+        f"revisando canales 0/{len(canales)}"
+    )
+
+    # ============================================================
+    # 5️⃣ RECORRER CADA CANAL
+    # ============================================================
+
+    for i, canal_nombre in enumerate(canales, start=1):
+
+        canal_obj = discord.utils.get(
+            ctx.guild.channels,
+            name=canal_nombre
+        )
+
+        if not canal_obj:
+
+            await progress_msg.edit(
+                content=(
+                    f"⚠ Canal **{canal_nombre}** "
+                    f"no encontrado. "
+                    f"{i}/{len(canales)}"
+                )
+            )
+
+            await asyncio.sleep(1)
+            continue
+
+        # --------------------------------------------------------
+        # Actualizar progreso
+        # --------------------------------------------------------
+
+        await progress_msg.edit(
+            content=(
+                f"⏳ Procesando canal "
+                f"{i}/{len(canales)}: "
+                f"**{canal_nombre}**"
+            )
+        )
+
+        # --------------------------------------------------------
+        # DummyCtx
+        # --------------------------------------------------------
+
+        class DummyMessage:
+
+            def __init__(self, author, channel):
+
+                self.author = author
+                self.channel = channel
+                self.attachments = []
+
+        class DummyCtx:
+
+            def __init__(
+                self,
+                bot,
+                channel,
+                guild,
+                author,
+                send,
+                datos_csv
+            ):
+
+                self.bot = bot
+                self.channel = channel
+                self.guild = guild
+                self.author = author
+                self.send = send
+
+                self.message = DummyMessage(
+                    author,
+                    channel
+                )
+
+                self.view = None
+
+                # Datos del reporte de Catharsis
+                self.datos_csv = datos_csv
+
+        dummy_ctx = DummyCtx(
+            bot=ctx.bot,
+            channel=canal_obj,
+            guild=ctx.guild,
+            author=ctx.author,
+            send=canal_obj.send,
+            datos_csv=datos_csv
+        )
+
+        # --------------------------------------------------------
+        # Ejecutar !sitio
+        # --------------------------------------------------------
+
+        await sitio.invoke(dummy_ctx)
+
+        await asyncio.sleep(3)
+
+    # ============================================================
+    # 6️⃣ FINALIZAR
+    # ============================================================
+
+    await progress_msg.edit(
+        content=(
+            f"✅ Actualización completada: "
+            f"revisados {len(canales)}/{len(canales)} canales"
+        )
+    )
+
+    # ============================================================
+    # 7️⃣ GENERAR TABLE
+    # ============================================================
+
+    await table.invoke(ctx)
 
 # Comando !update
 @bot.command(name="update")
@@ -2808,8 +3181,14 @@ async def updater_cmd(ctx: commands.Context):
                 return
         # 4.1 — Resolver link Catharsis con dominios alternativos si el fijado falla
         if vars_dict.get("LINK_CATH"):
-            resolved_cath = await resolve_cath_domain(vars_dict["LINK_CATH"])
-            vars_dict["LINK_CATH"] = resolved_cath
+            if LOBOTOMIA:
+                vars_dict["LINK_CATH"] = lobotomizar_cath_link(
+                    vars_dict["LINK_CATH"]
+                )
+            else:
+                vars_dict["LINK_CATH"] = await resolve_cath_domain(
+                    vars_dict["LINK_CATH"]
+                )
         # 4.2 — Resolver link Lector
         if vars_dict.get("LINK_LEC"):
             resolved_lec = await resolve_lec_domain(vars_dict["LINK_LEC"])
@@ -2876,8 +3255,8 @@ async def updater_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización ETERNAL**\n\n" + "```" + texto_eter + "```") #esta sólo es cuando existe un link de eternal
         if vars_dict.get("LINK_LEC"):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
-        if vars_dict.get("LINK_COL"):
-            await ctx.send("👇 **Previsualización COLORCITOS**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de colorcitos
+#        if vars_dict.get("LINK_COL"):
+#            await ctx.send("👇 **Previsualización CAPIBARA**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de capibara
 
         canal_real = vars_dict.get("CHANNEL_OBJ")
         # 8) Anuncio automático en el canal del proyecto
