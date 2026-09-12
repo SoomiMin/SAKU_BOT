@@ -1124,6 +1124,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         ),
         "system": "catharsis",
         "x-fk-sistema": "3",
+        "x-api-key": CATH_API_KEY,
     }
 
     # ==========================================================
@@ -3618,7 +3619,7 @@ async def gen(ctx):
                 send=canal_obj.send  # ⚡ enviará embeds en el canal correcto
             )
             await sitio.invoke(dummy_ctx)
-            await asyncio.sleep(3)  # espera de 3 segundos antes del siguiente canal
+            await asyncio.sleep(5)  # espera de 5 segundos antes del siguiente canal
         # 4️⃣ Finalizar mensaje de progreso
         await progress_msg.edit(content=f"✅ Actualización completada: revisados {len(canales)}/{len(canales)} canales")
         # 5️⃣ Llamar !table en el canal de invocación
