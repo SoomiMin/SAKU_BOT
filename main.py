@@ -3152,7 +3152,6 @@ async def table(ctx):
     except Exception as e:
         await ctx.send(f"❌ Error al obtener los datos: {e}")
         print(f"❌ Error en !table: {e}")
-
 # Comando !acceso
 @bot.command()
 @commands.has_any_role(
@@ -3572,6 +3571,7 @@ async def acceso(ctx, user: discord.Member = None):
         print(
             f"[ERROR acceso general] {e}"
         )
+
 # Comando !gen
 @bot.command()
 @rol_permitido("gen")
