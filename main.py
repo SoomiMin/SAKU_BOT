@@ -1078,7 +1078,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
     if LOBOTOMIA == 1:
         url = lobotomizar_cath_link(url)
 
-#    print(f"🔎 Catharsis → consultando: {url}")
+    print(f"🔎 Catharsis → consultando: {url}")
 
     # ==========================================================
     # 1. EXTRAER SLUG
@@ -1113,7 +1113,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         f"https://newcatharsis.dig-it.info/api/mangas/{slug}"
     )
 
-#    print(f"📡 Catharsis → API: {api_url}")
+    print(f"📡 Catharsis → API: {api_url}")
 
     headers = {
         "Accept": "application/json",
@@ -1134,10 +1134,10 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
 
         try:
 
-#            print(
-#                f"🔎 Catharsis → intento "
-#                f"{intento}/{retries}"
-#            )
+            print(
+                f"🔎 Catharsis → intento "
+                f"{intento}/{retries}"
+            )
 
             response = requests.get(
                 api_url,
@@ -1145,10 +1145,10 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
                 timeout=20
             )
 
-#            print(
-#                f"📡 Catharsis → HTTP "
-#                f"{response.status_code}"
-#            )
+            print(
+                f"📡 Catharsis → HTTP "
+                f"{response.status_code}"
+            )
 
             response.raise_for_status()
 
@@ -1207,15 +1207,15 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
             numero = ultimo_capitulo.get("numero")
             fecha_raw = ultimo_capitulo.get("date_created")
 
-#            print(
-#                f"📚 Catharsis → "
-#                f"capítulo encontrado: {numero}"
-#            )
+            print(
+                f"📚 Catharsis → "
+                f"capítulo encontrado: {numero}"
+            )
 
-#            print(
-#                f"📅 Catharsis → "
-#                f"fecha encontrada: {fecha_raw}"
-#            )
+            print(
+                f"📅 Catharsis → "
+                f"fecha encontrada: {fecha_raw}"
+            )
 
             # ==================================================
             # 6. PREESTRENO
@@ -1241,10 +1241,10 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
                             numero_float
                         )
 
-#                    print(
-#                        f"🧪 Catharsis → "
-#                        f"preestreno activado: {numero}"
-#                    )
+                    print(
+                        f"🧪 Catharsis → "
+                        f"preestreno activado: {numero}"
+                    )
 
                 except Exception as e:
 
@@ -1280,15 +1280,15 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
                         fecha_formateada
                     )
 
-#                    print(
-#                        f"📅 Catharsis → "
-#                        f"fecha normalizada: {fecha_formateada}"
-#                    )
+                    print(
+                        f"📅 Catharsis → "
+                        f"fecha normalizada: {fecha_formateada}"
+                    )
 
-#                    print(
-#                        f"🕐 Catharsis → "
-#                        f"antigüedad: {fecha}"
-#                    )
+                    print(
+                        f"🕐 Catharsis → "
+                        f"antigüedad: {fecha}"
+                    )
 
                 except Exception as e:
 
@@ -1303,11 +1303,11 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
             # 8. RESULTADO FINAL
             # ==================================================
 
-#            print(
-#                f"✅ Catharsis → "
-#                f"Capítulo: {numero} | "
-#                f"Fecha: {fecha}"
-#            )
+            print(
+                f"✅ Catharsis → "
+                f"Capítulo: {numero} | "
+                f"Fecha: {fecha}"
+            )
 
             return (
                 f"CATHARSIS\n"
