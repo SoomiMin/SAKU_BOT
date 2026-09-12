@@ -3232,11 +3232,10 @@ async def acceso(ctx, user: discord.Member = None):
 
         drive_link = None
 
-        # Nueva forma de leer pins en discord.py
-        async for message in ctx.channel.pins():
-
+        # Leer mensajes fijados
+        pinned = await ctx.channel.pins()
+        for message in pinned:
             contenido = message.content or ""
-
             if "drive.google.com" in contenido:
                 drive_link = contenido
                 break
