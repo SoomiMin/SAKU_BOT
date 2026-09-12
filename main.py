@@ -15,8 +15,12 @@ from discord.ext import commands, tasks
 from googleapiclient.errors import HttpError
 import traceback
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import io, csv
+import io
 import aiohttp
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.tl.functions.messages import CreateForumTopicRequest
+from telethon.tl.types import MessageService, MessageActionTopicCreate
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -74,6 +78,10 @@ SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
+TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
+TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
+TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
+TELEGRAM_SESSION = os.getenv("TELEGRAM_SESSION")
 ultimo_calendario_run = None
 
 # — Crear credenciales de servicio
@@ -813,6 +821,8 @@ CATH_DOMAINS = [
     "catharsisworld.online",
     "newcatharsis.dig-it.info"
 ]
+LOBOTOMIA = 1
+LOBOTOMIA_CATH_DOMAIN = "https://newcatharsis.dig-it.info"
 LEC_DOMAINS = [
     "lectorjpg.com",
     "visorjpg.lat"
@@ -1043,102 +1053,319 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             continue
 
     return "❌ No se pudo acceder a Lector después de varios intentos."
-def evento_cath(canal, datos_csv=None):
+def evento_cath(url, preestreno=False, retries=3, delay=5):
+    """
+    Consulta NewCatharsis mediante su API.
+    Flujo:
+        Link antiguo/nuevo
+            ↓
+        Lobotomía si corresponde
+            ↓
+        Extraer slug
+            ↓
+        GET /api/mangas/{slug}
+            ↓
+        Obtener número y fecha del último capítulo
+            ↓
+        Convertir fecha → "X días atrás"
+    La fecha corresponde a la fecha de creación
+    del último capítulo.
+    """
+    if not url:
+        return "❌ No se proporcionó un enlace de Catharsis."
+
+    # 🧠 Convertir enlace viejo → enlace nuevo
+    if LOBOTOMIA == 1:
+        url = lobotomizar_cath_link(url)
+
+#    print(f"🔎 Catharsis → consultando: {url}")
+
+    # ==========================================================
+    # 1. EXTRAER SLUG
+    # ==========================================================
+
     try:
-        range_name = f"{SHEET_NAME}!A2:L"
-        resp = sheet.values().get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=range_name
-        ).execute()
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
 
-        values = resp.get("values", [])
+        # Esperamos:
+        # /manga/slug
+        if not path.startswith("manga/"):
+            return "❌ El enlace de Catharsis no tiene un formato válido."
 
-        for row in values:
+        slug = path[len("manga/"):].strip("/")
 
-            # Columna B = proyecto/canal
-            if len(row) > 1 and row[1].strip().lower() == canal.strip().lower():
+        if not slug:
+            return "❌ No se pudo obtener el slug del manga."
 
-                # =====================================================
-                # CATHARSIS DESDE CSV
-                # =====================================================
-                if datos_csv is not None:
+    except Exception as e:
+        print(
+            f"⚠️ Catharsis → "
+            f"error obteniendo slug: {e}"
+        )
+        return "❌ No se pudo interpretar el enlace de Catharsis."
 
-                    # Columna L = CATH_ID
-                    cath_id = row[11].strip() if len(row) > 11 else ""
+    # ==========================================================
+    # 2. CONSTRUIR API
+    # ==========================================================
 
-                    if cath_id and cath_id in datos_csv:
+    api_url = (
+        f"https://newcatharsis.dig-it.info/api/mangas/{slug}"
+    )
 
-                        cap = datos_csv[cath_id]
+#    print(f"📡 Catharsis → API: {api_url}")
 
-                        return (
-                            f"CATHARSIS\n"
-                            f"> Capítulo: {cap}\n"
-                            f"> Actualizado: Desde archivo"
-                        )
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/151.0.0.0 Safari/537.36 OPR/135.0.0.0"
+        ),
+        "system": "catharsis",
+        "x-fk-sistema": "3",
+    }
 
-                    # El proyecto existe en LISTA pero no está
-                    # incluido en el CSV.
-                    print(
-                        f"⚠️ CATHARSIS: "
-                        f"'{canal}' tiene CATH_ID '{cath_id}', "
-                        f"pero no aparece en el CSV."
-                    )
+    # ==========================================================
+    # 3. CONSULTAR API
+    # ==========================================================
 
-                    return (
-                        "CATHARSIS\n"
-                        "> Capítulo: N/D\n"
-                        "> Actualizado: Desde archivo"
-                    )
+    for intento in range(1, retries + 1):
 
-                # =====================================================
-                # COMPORTAMIENTO NORMAL DE !SITIO
-                # =====================================================
+        try:
 
-                # Columna D = capítulo Catharsis
-                cap = (
-                    row[3].strip()
-                    if len(row) > 3 and row[3].strip()
-                    else "N/D"
-                )
+#            print(
+#                f"🔎 Catharsis → intento "
+#                f"{intento}/{retries}"
+#            )
 
-                # Columna E = fecha Catharsis
-                fecha = (
-                    row[4].strip()
-                    if len(row) > 4 and row[4].strip()
-                    else "N/D"
+            response = requests.get(
+                api_url,
+                headers=headers,
+                timeout=20
+            )
+
+#            print(
+#                f"📡 Catharsis → HTTP "
+#                f"{response.status_code}"
+#            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+            # ==================================================
+            # 4. OBTENER DATOS
+            # ==================================================
+
+            total_capitulos = data.get("n_capitulos")
+            capitulos = data.get("capitulos") or []
+
+            if total_capitulos is None:
+                print(
+                    "⚠️ Catharsis → "
+                    "la API no devolvió n_capitulos."
                 )
 
                 return (
-                    f"CATHARSIS\n"
-                    f"> Capítulo: {cap}\n"
-                    f"> Actualizado: {fecha}"
+                    "❌ Catharsis respondió, "
+                    "pero no devolvió el total de capítulos."
                 )
 
-        # El enlace Catharsis existe en fijados,
-        # aunque el canal no esté en la hoja.
-        print(
-            f"⚠️ No se encontró el canal '{canal}' en la hoja. "
-            f"Se mostrará como N/D."
-        )
+            if not capitulos:
+                print(
+                    "⚠️ Catharsis → "
+                    "la API no devolvió capítulos."
+                )
 
-        return (
-            "CATHARSIS\n"
-            "> Capítulo: N/D\n"
-            "> Actualizado: N/D"
-        )
+                return (
+                    "❌ Catharsis respondió, "
+                    "pero no devolvió la lista de capítulos."
+                )
 
-    except Exception as e:
+            # ==================================================
+            # 5. BUSCAR EL CAPÍTULO MÁS ALTO
+            # ==================================================
 
-        print(
-            f"❌ Error leyendo Catharsis desde la hoja: {e}"
-        )
+            def numero_capitulo(cap):
 
-        return (
-            "CATHARSIS\n"
-            "> Capítulo: N/D\n"
-            "> Actualizado: N/D"
-        )
-        
+                try:
+                    return float(
+                        str(
+                            cap.get("numero", 0)
+                        ).replace(",", ".")
+                    )
+
+                except Exception:
+                    return 0
+
+            ultimo_capitulo = max(
+                capitulos,
+                key=numero_capitulo
+            )
+
+            numero = ultimo_capitulo.get("numero")
+            fecha_raw = ultimo_capitulo.get("date_created")
+
+#            print(
+#                f"📚 Catharsis → "
+#                f"capítulo encontrado: {numero}"
+#            )
+
+#            print(
+#                f"📅 Catharsis → "
+#                f"fecha encontrada: {fecha_raw}"
+#            )
+
+            # ==================================================
+            # 6. PREESTRENO
+            # ==================================================
+
+            if preestreno:
+
+                try:
+
+                    numero_float = float(
+                        str(numero).replace(",", ".")
+                    )
+
+                    if numero_float > 0:
+                        numero_float -= 1
+
+                    if numero_float.is_integer():
+                        numero = str(
+                            int(numero_float)
+                        )
+                    else:
+                        numero = str(
+                            numero_float
+                        )
+
+#                    print(
+#                        f"🧪 Catharsis → "
+#                        f"preestreno activado: {numero}"
+#                    )
+
+                except Exception as e:
+
+                    print(
+                        f"⚠️ Catharsis → "
+                        f"no se pudo aplicar preestreno: {e}"
+                    )
+
+            # ==================================================
+            # 7. CONVERTIR FECHA → DÍAS ATRÁS
+            # ==================================================
+
+            fecha = "N/D"
+
+            if fecha_raw:
+
+                try:
+
+                    fecha_obj = datetime.fromisoformat(
+                        fecha_raw.replace("Z", "+00:00")
+                    )
+
+                    # --------------------------------------------------
+                    # Convertimos la fecha ISO de la API al mismo
+                    # formato que entiende fecha_a_dias_atras()
+                    # --------------------------------------------------
+
+                    fecha_formateada = fecha_obj.strftime(
+                        "%d/%m/%Y"
+                    )
+
+                    fecha = fecha_a_dias_atras(
+                        fecha_formateada
+                    )
+
+#                    print(
+#                        f"📅 Catharsis → "
+#                        f"fecha normalizada: {fecha_formateada}"
+#                    )
+
+#                    print(
+#                        f"🕐 Catharsis → "
+#                        f"antigüedad: {fecha}"
+#                    )
+
+                except Exception as e:
+
+                    print(
+                        f"⚠️ Catharsis → "
+                        f"error convirtiendo fecha: {e}"
+                    )
+
+                    fecha = "N/D"
+
+            # ==================================================
+            # 8. RESULTADO FINAL
+            # ==================================================
+
+#            print(
+#                f"✅ Catharsis → "
+#                f"Capítulo: {numero} | "
+#                f"Fecha: {fecha}"
+#            )
+
+            return (
+                f"CATHARSIS\n"
+                f"> Capítulo: {numero}\n"
+                f"> Actualizado: {fecha}"
+            )
+
+        # ======================================================
+        # ERROR HTTP
+        # ======================================================
+
+        except requests.RequestException as e:
+
+            print(
+                f"⚠️ Catharsis → "
+                f"error HTTP "
+                f"(intento {intento}/{retries}): {e}"
+            )
+
+        # ======================================================
+        # JSON INVÁLIDO
+        # ======================================================
+
+        except ValueError as e:
+
+            print(
+                f"⚠️ Catharsis → "
+                f"respuesta JSON inválida: {e}"
+            )
+
+            return (
+                "❌ Catharsis respondió, "
+                "pero la respuesta no es un JSON válido."
+            )
+
+        # ======================================================
+        # ERROR INESPERADO
+        # ======================================================
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Catharsis → "
+                f"error inesperado "
+                f"(intento {intento}/{retries}): {e}"
+            )
+
+        # ======================================================
+        # REINTENTO
+        # ======================================================
+
+        if intento < retries:
+            time.sleep(delay)
+
+    return (
+        "❌ No se pudo acceder a Catharsis "
+        "después de varios intentos."
+    )
 def evento_capi(url, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1352,10 +1579,289 @@ def obtener_color(dias_str, sitio):
         else:
             return 0xE74C3C
     pass
+# Funciones de Saku_Ficha
+telegram_client = TelegramClient(
+    StringSession(TELEGRAM_SESSION),
+    TELEGRAM_API_ID,
+    TELEGRAM_API_HASH
+)
+# ==========================================================
+# FORMATO DEL TOPIC DE TELEGRAM
+# ==========================================================
+
+def formatear_topic_telegram(nombre):
+    """
+    Convierte:
+
+        001-el-tanque-de-rango-c-no-morirá
+
+    en:
+
+        001 | El tanque de rango c no morirá
+    """
+
+    partes = nombre.split("-", 1)
+
+    if len(partes) == 2:
+        num, titulo = partes
+
+        titulo = titulo.replace("-", " ").capitalize()
+
+        return f"{num} | {titulo}"
+
+    return nombre
+# ==========================================================
+# CREAR TOPIC EN TELEGRAM
+# ==========================================================
+
+async def crear_topic_telegram(nombre_canal):
+    """
+    Crea un Topic en el grupo de Telegram y devuelve
+    el enlace directo al Topic.
+
+    Ejemplo:
+
+        https://t.me/c/3595221763/1517
+    """
+
+    titulo_topic = formatear_topic_telegram(nombre_canal)
+
+    print(
+        f"📱 Telegram → Creando topic:\n"
+        f"   Canal Discord: {nombre_canal}\n"
+        f"   Topic: {titulo_topic}"
+    )
+
+    try:
+        # --------------------------------------------------
+        # Asegurar conexión con Telegram
+        # --------------------------------------------------
+        if not telegram_client.is_connected():
+            print("🔌 Telegram → Conectando...")
+            await telegram_client.connect()
+
+        if not telegram_client.is_connected():
+            raise RuntimeError(
+                "No se pudo establecer conexión con Telegram."
+            )
+
+        # --------------------------------------------------
+        # Crear Topic
+        #
+        # IMPORTANTE:
+        # Telethon 1.45.0 usa argumentos posicionales aquí.
+        # --------------------------------------------------
+        resultado = await telegram_client(
+            CreateForumTopicRequest(
+                TELEGRAM_GRUPO_ID,
+                titulo_topic
+            )
+        )
+
+        # --------------------------------------------------
+        # Buscar específicamente el mensaje de creación
+        # del Topic.
+        # --------------------------------------------------
+        topic_id = None
+
+        for update in getattr(resultado, "updates", []):
+
+            mensaje = getattr(update, "message", None)
+
+            if not isinstance(mensaje, MessageService):
+                continue
+
+            if isinstance(
+                mensaje.action,
+                MessageActionTopicCreate
+            ):
+                topic_id = mensaje.id
+                break
+
+        # --------------------------------------------------
+        # Validar que obtuvimos el ID
+        # --------------------------------------------------
+        if not topic_id:
+            raise RuntimeError(
+                "Telegram creó el topic, pero no se pudo "
+                "obtener el ID del mensaje principal."
+            )
+
+        # --------------------------------------------------
+        # Convertir:
+        #
+        # -1003595221763
+        #
+        # en:
+        #
+        # 3595221763
+        # --------------------------------------------------
+        grupo_link_id = str(TELEGRAM_GRUPO_ID)
+
+        if grupo_link_id.startswith("-100"):
+            grupo_link_id = grupo_link_id[4:]
+
+        # --------------------------------------------------
+        # Construir enlace directo
+        # --------------------------------------------------
+        link_topic = (
+            f"https://t.me/c/{grupo_link_id}/{topic_id}"
+        )
+
+        print(
+            f"✅ Telegram → Topic creado correctamente.\n"
+            f"   Título: {titulo_topic}\n"
+            f"   ID: {topic_id}\n"
+            f"   Link: {link_topic}"
+        )
+
+        return link_topic
+
+    except Exception as e:
+
+        print(
+            f"❌ Telegram → Error creando topic "
+            f"'{titulo_topic}': {e}"
+        )
+
+        raise
+# ==========================================================
+# DRIVE — ENCONTRAR CARPETA TYPE DESDE LOS PINS
+# ==========================================================
+
+async def encontrar_drive_type(channel):
+    """
+    Lee los mensajes fijados del canal, encuentra un enlace
+    de Google Drive y busca dentro de esa carpeta la carpeta
+    correspondiente a TYPE.
+
+    Nombres aceptados:
+        Type
+        Ed
+        Edición
+        Edit
+        Typeset
+
+    Devuelve:
+        URL de la carpeta TYPE
+        o None si no se encuentra.
+    """
+
+    try:
+        pins = await channel.pins()
+    except Exception as e:
+        print(f"❌ Drive → No pude leer los pins: {e}")
+        return None
+
+    # ------------------------------------------------------
+    # Buscar enlaces de Drive en los mensajes fijados
+    # ------------------------------------------------------
+
+    drive_links = []
+
+    for msg in pins:
+
+        text = (
+            (msg.content or "")
+            + "\n"
+            + " ".join(att.url for att in msg.attachments)
+        )
+
+        links = extract_drive_links(text)
+
+        for link in links:
+            if link not in drive_links:
+                drive_links.append(link)
+
+    if not drive_links:
+        print("⚠️ Drive → No encontré ningún enlace de Drive en los pins.")
+        return None
+
+    # ------------------------------------------------------
+    # Autenticación
+    # ------------------------------------------------------
+
+    creds = authenticate()
+    service = build("drive", "v3", credentials=creds)
+
+    # ------------------------------------------------------
+    # Nombres válidos para la carpeta TYPE
+    # ------------------------------------------------------
+
+    nombres_type = {
+        "type",
+        "ed",
+        "edicion",
+        "edición",
+        "edit",
+        "typeset"
+    }
+
+    # ------------------------------------------------------
+    # Revisar cada carpeta de Drive encontrada
+    # ------------------------------------------------------
+
+    for link in drive_links:
+
+        folder_id = extract_id(link)
+
+        if not folder_id:
+            continue
+
+        try:
+
+            items = service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="files(id,name,mimeType)"
+            ).execute().get("files", [])
+
+            # --------------------------------------------------
+            # Buscar carpeta TYPE
+            # --------------------------------------------------
+
+            for item in items:
+
+                if item["mimeType"] != "application/vnd.google-apps.folder":
+                    continue
+
+                nombre = item["name"].strip().lower()
+
+                if nombre in nombres_type:
+
+                    type_id = item["id"]
+
+                    # ------------------------------------------
+                    # Construir URL directa de la carpeta
+                    # ------------------------------------------
+
+                    link_type = (
+                        f"https://drive.google.com/drive/u/1/folders/{type_id}"
+                    )
+
+                    print(
+                        f"✅ Drive → Carpeta TYPE encontrada:\n"
+                        f"   Nombre: {item['name']}\n"
+                        f"   ID: {type_id}\n"
+                        f"   Link: {link_type}"
+                    )
+
+                    return link_type
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Drive → Error revisando "
+                f"'{link}': {e}"
+            )
+
+    print(
+        "⚠️ Drive → Encontré carpetas de Drive, "
+        "pero no encontré una carpeta TYPE válida."
+    )
+
+    return None
 # Funciones de Saku_Update
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
-LOBOTOMIA = 1
-LOBOTOMIA_CATH_DOMAIN = "https://newcatharsis.dig-it.info"
 def extraer_numeros(texto:str) -> List[int]:
     nums = re.findall(r"\d+", texto)
     return [int(n) for n in nums]
@@ -1736,93 +2242,72 @@ async def buscar_portada(channel):
             return None
         return msg.attachments[0]
     return None
-
 def lobotomizar_cath_link(original_url: str) -> str:
     """
-    Convierte links antiguos de Catharsis al formato nuevo.
-
-    Antiguo:
+    🌸 Editado por Rami
+    Convierte links antiguos de Catharsis:
         https://catharsisworld.dig-it.info/serie/mi-manga/
-
-    Nuevo:
+        ↓
         https://newcatharsis.dig-it.info/manga/mi-manga
-
-    Si el link YA pertenece a newcatharsis.dig-it.info,
-    se devuelve exactamente como está.
+    Si ya es NewCatharsis, no lo modifica.
     """
-
     if not original_url:
         return original_url
-
     try:
         parsed = urlparse(original_url)
-
-        # 🛑 Ya está en el sitio nuevo → no tocar
+        # ---------------------------------------------
+        # Ya está en el dominio nuevo
+        # ---------------------------------------------
         if parsed.netloc.lower() == "newcatharsis.dig-it.info":
             return original_url
-
-        # Obtener la ruta sin / inicial/final
+        # ---------------------------------------------
+        # Extraer ruta
+        # ---------------------------------------------
         path = parsed.path.strip("/")
-
-        # Solo transformar el formato antiguo conocido:
-        # /serie/nombre-del-proyecto
+        # ---------------------------------------------
+        # Formato antiguo:
+        # /serie/slug
+        # ---------------------------------------------
         if path.startswith("serie/"):
             slug = path[len("serie/"):].strip("/")
-
             if slug:
-                return f"{LOBOTOMIA_CATH_DOMAIN}/manga/{slug}"
-
-        # Si no coincide con el formato esperado,
-        # dejar el link original intacto.
+                nuevo_url = (
+                    f"{LOBOTOMIA_CATH_DOMAIN}/manga/{slug}"
+                )
+#                print(
+#                    f"🧠 Lobotomía Catharsis:\n"
+#                    f"   Viejo: {original_url}\n"
+#                    f"   Nuevo: {nuevo_url}"
+#                )
+                return nuevo_url
+        # ---------------------------------------------
+        # Si no sabemos transformarlo, no tocarlo
+        # ---------------------------------------------
         return original_url
-
     except Exception as e:
         print(f"⚠️ Error lobotomizando Catharsis: {e}")
         return original_url
-
 async def resolve_cath_domain(original_url: str) -> str:
     """
-    Recibe un URL tomado del pin (LINK_CATH) y determina cuál dominio Catharsis funciona.
-    - Primero prueba tal cual está.
-    - Si no funciona, intenta reemplazar el dominio por todos los dominios de CATH_DOMAINS.
-    - Si encuentra uno que responde 200, lo regresa.
-    - Si ninguno funciona, devuelve el original.
+    🌸 Editado por Rami
+    Normaliza el enlace de Catharsis.
+    Cuando LOBOTOMIA = 1, convierte cualquier URL antigua
+    al formato de NewCatharsis.
     """
     if not original_url:
-        return None
-
-    # 1 — Probar el link tal cual está
-    if check_alive(original_url):
         return original_url
-
-    # 2 — Intentar con todos los dominios conocidos
-    try:
-        parsed = urlparse(original_url)
-        original_domain = parsed.netloc.lower()
-    except:
-        return original_url  # si el URL no es válido, devolverlo tal cual
-
-    for dom in CATH_DOMAINS:
-        # evitar probar el mismo
-        if dom == original_domain:
-            continue
-
-        test_url = url_with_domain(original_url, dom)
-        if check_alive(test_url):
-            return test_url
-
-    # 3 — Si ninguno funcionó, devolver tal cual
+    if LOBOTOMIA == 1:
+        return lobotomizar_cath_link(original_url)
     return original_url
-
 # Normalizar dominio Catharsis si hace falta
+# 🌸 Editado por Rami
 def normalize_cath_link(url_or_text: str) -> str:
     if not url_or_text:
         return url_or_text
-    # si es URL y contiene .dig-it.info -> reemplazar por .vxviral.xyz (ejemplo)
-    corrected = url_or_text.replace(".dig-it.info", ".vxviral.xyz")
-    # más reglas de normalización pueden agregarse aquí
-    return corrected
 
+    if LOBOTOMIA == 1:
+        return lobotomizar_cath_link(url_or_text)
+    return url_or_text
 async def resolve_lec_domain(original_url: str) -> str:
     if not original_url:
         return None
@@ -2398,27 +2883,22 @@ async def raw(ctx):
 async def sitio(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-
     await ctx.send("🔍 Buscando enlaces de proyecto en los mensajes fijados...")
     pins_data = await read_channel_pins(ctx.channel)
-
     tasks = []
     task_map = {}  # para saber qué resultado pertenece a qué sitio
-
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(asyncio.to_thread(evento_cath, ctx.channel.name, getattr(ctx, "datos_csv", None)))
+        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
         task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
-
     # --- ETERNAL ---
     if pins_data["LINK_ETER"]:
         tasks.append(asyncio.to_thread(evento_eter, pins_data["LINK_ETER"], pins_data.get("PRE_ETER", False)))
         task_map[len(tasks)-1] = "eternal"
     else:
         task_map["eternal"] = "ND"
-
     # --- LECTOR ---
     if pins_data["LINK_LEC"]:
         tasks.append(asyncio.to_thread(evento_lec, pins_data["LINK_LEC"], pins_data.get("PRE_LEC", False)))
@@ -2439,9 +2919,7 @@ async def sitio(ctx):
         )
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
         return await ctx.send(embed=embed)
-
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
-
     resultado_dict = {
         "catharsis_cap": "N/D",
         "catharsis_date": "N/D",
@@ -2452,16 +2930,13 @@ async def sitio(ctx):
         "col_cap": "N/D",
         "col_date": "N/D"
     }
-
     # --- Procesar resultados reales ---
     for i, res in enumerate(resultados):
         sitio = task_map.get(i)
         if not sitio:
             continue
-
         if isinstance(res, Exception):
             continue
-
         if isinstance(res, str) and res.startswith("❌"):
             if sitio == "catharsis":
                 resultado_dict["catharsis_cap"] = "N/A"
@@ -2476,47 +2951,37 @@ async def sitio(ctx):
                 resultado_dict["col_cap"] = "N/A"
                 resultado_dict["col_date"] = "N/A"
             continue
-
         cap_match = re.search(r'Capítulo: ([^\n]+)', res)
         act_match = re.search(r'Actualizado: ([^\n]+)', res)
-
         cap_texto = cap_match.group(1) if cap_match else "N/D"
         dias_texto = act_match.group(1) if act_match else "N/D"
-
         if sitio == "catharsis":
             resultado_dict["catharsis_cap"] = cap_texto
             resultado_dict["catharsis_date"] = dias_texto
             sitio_nombre = "CATHARSIS"
-
         elif sitio == "eternal":
             resultado_dict["eternal_cap"] = cap_texto
             resultado_dict["eternal_date"] = dias_texto
             sitio_nombre = "ETERNAL"
-
         elif sitio == "lector":
             resultado_dict["lector_cap"] = cap_texto
             resultado_dict["lector_date"] = dias_texto
             sitio_nombre = "LECTORJPG"
-
         elif sitio == "capi":
             resultado_dict["col_cap"] = cap_texto
             resultado_dict["col_date"] = dias_texto
             sitio_nombre = "CAPIBARA"
-
         # ✅ SOLO mostrar embed si hay link (o sea, si entró aquí)
         sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "CAPIBARA": "🐑"}[sitio_nombre]
-
         embed = discord.Embed(
             title=f"{sitio_icono} {sitio_nombre}",
             description=f"Capítulo: {cap_texto}\nActualizado: {dias_texto}",
             color=obtener_color(dias_texto, sitio_nombre)
         )
         await ctx.send(embed=embed)
-
     canal = ctx.channel.name
     categoria = ctx.channel.category.name if ctx.channel.category else "Sin categoría"
     escribir_a_hoja(canal, categoria,resultado_dict)
-
 def escribir_a_hoja(canal, categoria, resultados):
     try:
         range_name = f"{SHEET_NAME}!A2:K"  # <-- empieza en fila 2
@@ -2688,38 +3153,121 @@ async def table(ctx):
 
 # Comando !acceso
 @bot.command()
-@commands.has_any_role(1357527939226533920, 1463686138689622250, 1489027695307260006, 1476769715006341323, 1489027850349576352) ##ADMIN/QC/HARINA/MANTEQUILLA/AZÚCAR
+@commands.has_any_role(
+    1357527939226533920,  # ADMIN
+    1463686138689622250,  # QC
+    1489027695307260006,  # HARINA
+    1476769715006341323,  # MANTEQUILLA
+    1489027850349576352   # AZÚCAR
+)
 async def acceso(ctx, user: discord.Member = None):
-    """Otorga acceso de editor a un usuario según la lista USUARIOS."""
+    """
+    Otorga acceso de editor a un usuario según la lista USUARIOS.
+
+    Además:
+    - Lee USUARIOS!B:E.
+    - B = Discord ID
+    - C = Email
+    - D = VPN (ignorada)
+    - E = ACCESO
+    - Si el canal comienza con NNN-, registra ese código en E.
+    - Evita códigos duplicados.
+    - Si el usuario ya tenía acceso en Drive, mantiene el mensaje público
+      pero sincroniza igualmente la columna E.
+    - Si el canal no tiene código (ej. fuerza-del-destino), no modifica E.
+    """
+
     if user is None:
         embed = discord.Embed(
             title="🌸 Saku — Acceso",
-            description=f"Debes mencionar a un usuario. Ejemplo: `!acceso @usuario`",
+            description=(
+                "Debes mencionar a un usuario. "
+                "Ejemplo: `!acceso @usuario`"
+            ),
             color=0xFFB6C1
         )
         await ctx.send(embed=embed)
         return
 
     try:
-        # Obtener enlace Drive fijado en el canal
-        pinned = await ctx.channel.pins()
-        drive_link = next((m.content for m in pinned if "drive.google.com" in m.content), None)
+        # ==========================================================
+        # 1. IDENTIFICAR EL PROYECTO DESDE EL NOMBRE DEL CANAL
+        # ==========================================================
+
+        canal_nombre = ctx.channel.name.strip()
+
+        # Esperamos algo como:
+        # 025-fuerza-del-destino
+        #
+        # Si es simplemente:
+        # fuerza-del-destino
+        #
+        # no habrá código de proyecto.
+
+        match_proyecto = re.match(
+            r"^(\d+)-",
+            canal_nombre
+        )
+
+        if match_proyecto:
+            codigo_proyecto = match_proyecto.group(1)
+
+            print(
+                f"🔎 acceso → "
+                f"Proyecto detectado en canal: {codigo_proyecto}"
+            )
+        else:
+            codigo_proyecto = None
+
+            print(
+                f"ℹ️ acceso → "
+                f"Canal '{canal_nombre}' no tiene código de proyecto. "
+                f"No se modificará USUARIOS!E."
+            )
+
+        # ==========================================================
+        # 2. OBTENER ENLACE DRIVE FIJADO
+        # ==========================================================
+
+        drive_link = None
+
+        # Nueva forma de leer pins en discord.py
+        async for message in ctx.channel.pins():
+
+            contenido = message.content or ""
+
+            if "drive.google.com" in contenido:
+                drive_link = contenido
+                break
 
         if not drive_link:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
-                description=f"⚠️ No hay enlaces de Google Drive fijados en este canal.",
+                description=(
+                    "⚠️ No hay enlaces de Google Drive "
+                    "fijados en este canal."
+                ),
                 color=0xFFB6C1
             )
             await ctx.send(embed=embed)
             return
 
-        # Extraer ID del archivo o carpeta
-        match = re.search(r"/(?:folders|file)/([a-zA-Z0-9_-]+)", drive_link)
+        # ==========================================================
+        # 3. EXTRAER ID DEL ARCHIVO/CARPETA
+        # ==========================================================
+
+        match = re.search(
+            r"/(?:folders|file)/([a-zA-Z0-9_-]+)",
+            drive_link
+        )
+
         if not match:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
-                description=f"❌ No se pudo identificar el ID de archivo o carpeta de Google Drive.",
+                description=(
+                    "❌ No se pudo identificar el ID "
+                    "de archivo o carpeta de Google Drive."
+                ),
                 color=0xFFB6C1
             )
             await ctx.send(embed=embed)
@@ -2727,391 +3275,357 @@ async def acceso(ctx, user: discord.Member = None):
 
         file_id = match.group(1)
 
-        # Leer la hoja USUARIOS
+        # ==========================================================
+        # 4. LEER USUARIOS B:E
+        # ==========================================================
+
         USERS_SHEET_NAME = os.getenv("USERS_SHEET_NAME")
+
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{USERS_SHEET_NAME}!A2:C"
+            range=f"{USERS_SHEET_NAME}!B2:E"
         ).execute().get("values", [])
 
-        # Buscar usuario en la lista
+        # ==========================================================
+        # 5. BUSCAR USUARIO
+        #
+        # B = Discord ID
+        # C = Email
+        # D = VPN       ← IGNORADA
+        # E = ACCESO
+        # ==========================================================
+
         discord_id = str(user.id)
+
         matched = None
-        for row in data:
-            if len(row) >= 3 and row[1] == discord_id:
+        matched_sheet_row = None
+
+        for index, row in enumerate(data, start=2):
+
+            if len(row) >= 2 and str(row[0]).strip() == discord_id:
                 matched = row
+                matched_sheet_row = index
                 break
 
         if not matched:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
-                description=f"❌ Usuario {user.mention} no encontrado en la lista USUARIOS.",
+                description=(
+                    f"❌ Usuario {user.mention} "
+                    f"no encontrado en la lista USUARIOS."
+                ),
                 color=0xFFB6C1
             )
             await ctx.send(embed=embed)
             return
 
-        email = matched[2]
+        email = matched[1].strip()
 
-        # Crear cliente de Drive
-        drive_service = build("drive", "v3", credentials=creds)
+        # E puede no existir todavía si la fila está incompleta.
+        acceso_actual = ""
 
-        # Verificar si ya tiene acceso
+        if len(matched) >= 4:
+            acceso_actual = str(matched[3]).strip()
+
+        print(
+            f"👤 acceso → Usuario: {user} | "
+            f"Discord ID: {discord_id} | "
+            f"Email: {email}"
+        )
+
+        print(
+            f"📋 acceso → Acceso actual: "
+            f"{acceso_actual or '(vacío)'}"
+        )
+
+        # ==========================================================
+        # 6. CREAR CLIENTE DRIVE
+        # ==========================================================
+
+        drive_service = build(
+            "drive",
+            "v3",
+            credentials=creds
+        )
+
+        # ==========================================================
+        # 7. VERIFICAR SI YA TIENE ACCESO
+        # ==========================================================
+
+        existing = None
+
         try:
-            permissions = drive_service.permissions().list(fileId=file_id, fields="permissions(emailAddress,role)").execute()
-            existing = [p for p in permissions.get("permissions", []) if p.get("emailAddress") == email]
-            if existing:
-                embed = discord.Embed(
-                    title="🌸 Saku — Acceso",
-                    description=f"⚠️ {user.mention} ya tenía acceso como **{existing[0]['role']}**.",
-                    color=0xFFB6C1
-                )
-                await ctx.send(embed=embed)
-                return
-        except Exception:
-            pass  # Si no puede listar permisos, igual intenta otorgar acceso
-
-        # Intentar otorgar acceso de editor
-        try:
-            drive_service.permissions().create(
+            permissions = drive_service.permissions().list(
                 fileId=file_id,
-                body={
-                    "type": "user",
-                    "role": "writer",
-                    "emailAddress": email
-                },
-                fields="id"
+                fields="permissions(emailAddress,role)"
             ).execute()
-            embed = discord.Embed(
-                title="🌸 Saku — Acceso",
-                description=f"✅ Acceso concedido a {user.mention}.",
-                color=0xFFB6C1
+
+            existing = next(
+                (
+                    p for p in permissions.get("permissions", [])
+                    if p.get("emailAddress", "").lower() == email.lower()
+                ),
+                None
             )
-            await ctx.send(embed=embed)
 
         except Exception as e:
-            err_text = str(e)
+            print(
+                f"⚠️ acceso → "
+                f"No se pudieron consultar los permisos existentes: {e}"
+            )
 
-            # Caso especial: el correo no puede recibir permisos (por ser dueño u otro motivo)
-            if "invalid or not applicable for the given permission type" in err_text:
+        # ==========================================================
+        # 8. SI YA TENÍA ACCESO
+        #
+        # IMPORTANTE:
+        # NO hacemos return.
+        #
+        # El mensaje público se mantiene igual,
+        # pero continuamos para sincronizar USUARIOS!E.
+        # ==========================================================
+
+        if existing:
+
+            embed = discord.Embed(
+                title="🌸 Saku — Acceso",
+                description=(
+                    f"⚠️ {user.mention} ya tenía acceso "
+                    f"como **{existing.get('role', 'desconocido')}**."
+                ),
+                color=0xFFB6C1
+            )
+
+            await ctx.send(embed=embed)
+
+            print(
+                f"ℹ️ acceso → "
+                f"{email} ya tenía acceso como "
+                f"{existing.get('role', 'desconocido')}."
+            )
+
+        else:
+
+            # ======================================================
+            # 9. OTORGAR ACCESO DE EDITOR
+            # ======================================================
+
+            try:
+
+                drive_service.permissions().create(
+                    fileId=file_id,
+                    body={
+                        "type": "user",
+                        "role": "writer",
+                        "emailAddress": email
+                    },
+                    fields="id"
+                ).execute()
+
                 embed = discord.Embed(
                     title="🌸 Saku — Acceso",
                     description=(
-                        f"⚠️ No se pudo otorgar acceso a {user.mention}.\n"
-                        f"Posiblemente ya es propietario o el correo no acepta permisos directos.\n\n"
-                        f"🔔 <@&1357527939226533920>, revise manualmente el acceso al Drive."
+                        f"✅ Acceso concedido a {user.mention}."
                     ),
-                    color=0xFFC0CB
-                )
-                await ctx.send(embed=embed)
-            else:
-                embed = discord.Embed(
-                    title="🌸 Saku — Acceso",
-                    description=f"❌ API no conectada, asegúrese de que SAKU_BOT tenga acceso al Drive solicitado.",
                     color=0xFFB6C1
                 )
+
                 await ctx.send(embed=embed)
 
-            print(f"[ERROR acceso] {e}")
+                print(
+                    f"✅ acceso → "
+                    f"Acceso writer concedido a {email}."
+                )
+
+            except Exception as e:
+
+                err_text = str(e)
+
+                # Caso especial:
+                # correo propietario / permiso no aplicable
+                if (
+                    "invalid or not applicable for the given permission type"
+                    in err_text
+                ):
+
+                    embed = discord.Embed(
+                        title="🌸 Saku — Acceso",
+                        description=(
+                            f"⚠️ No se pudo otorgar acceso a "
+                            f"{user.mention}.\n"
+                            f"Posiblemente ya es propietario o el "
+                            f"correo no acepta permisos directos.\n\n"
+                            f"🔔 <@&1357527939226533920>, "
+                            f"revise manualmente el acceso al Drive."
+                        ),
+                        color=0xFFC0CB
+                    )
+
+                    await ctx.send(embed=embed)
+
+                else:
+
+                    embed = discord.Embed(
+                        title="🌸 Saku — Acceso",
+                        description=(
+                            "❌ API no conectada, asegúrese de que "
+                            "SAKU_BOT tenga acceso al Drive solicitado."
+                        ),
+                        color=0xFFB6C1
+                    )
+
+                    await ctx.send(embed=embed)
+
+                print(f"[ERROR acceso] {e}")
+
+                # Si Drive no pudo conceder acceso,
+                # no sincronizamos el proyecto como si todo hubiera salido bien.
+                return
+
+        # ==========================================================
+        # 10. SINCRONIZAR USUARIOS!E
+        #
+        # Solo si el canal tiene formato:
+        #
+        # NNN-nombre
+        #
+        # Ejemplo:
+        # 025-fuerza-del-destino
+        #
+        # Si no hay código, no tocamos E.
+        # ==========================================================
+
+        if codigo_proyecto:
+
+            accesos = [
+                x.strip()
+                for x in acceso_actual.split(",")
+                if x.strip()
+            ]
+
+            # ======================================================
+            # 11. EVITAR DUPLICADOS
+            # ======================================================
+
+            if codigo_proyecto in accesos:
+
+                print(
+                    f"ℹ️ acceso → "
+                    f"Proyecto {codigo_proyecto} "
+                    f"ya estaba registrado en USUARIOS!E."
+                )
+
+            else:
+
+                # Agregar siempre al final.
+                accesos.append(codigo_proyecto)
+
+                nuevo_acceso = ",".join(accesos)
+
+                # ==================================================
+                # 12. ACTUALIZAR COLUMNA E
+                # ==================================================
+
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{USERS_SHEET_NAME}!E{matched_sheet_row}",
+                    valueInputOption="RAW",
+                    body={
+                        "values": [
+                            [nuevo_acceso]
+                        ]
+                    }
+                ).execute()
+
+                print(
+                    f"✅ acceso → "
+                    f"USUARIOS!E{matched_sheet_row} actualizado: "
+                    f"{nuevo_acceso}"
+                )
+
+        else:
+
+            print(
+                f"⏭️ acceso → "
+                f"No se sincronizó USUARIOS!E porque "
+                f"'{canal_nombre}' no tiene código de proyecto."
+            )
+
+    # ==============================================================
+    # ERROR GENERAL
+    # ==============================================================
 
     except Exception as e:
+
         embed = discord.Embed(
             title="🌸 Saku — Acceso",
-            description=f"⚠️ Ocurrió un error inesperado al procesar el comando.",
+            description=(
+                "⚠️ Ocurrió un error inesperado "
+                "al procesar el comando."
+            ),
             color=0xFFB6C1
         )
-        await ctx.send(embed=embed)
-        print(f"[ERROR acceso general] {e}")
 
+        await ctx.send(embed=embed)
+
+        print(
+            f"[ERROR acceso general] {e}"
+        )
 # Comando !gen
 @bot.command()
 @rol_permitido("gen")
 async def gen(ctx):
-
     if ctx.guild.id not in GUILD_IDS:
-        return await ctx.send(
-            "❌ Este comando no está autorizado en este servidor."
-        )
-
-    # ============================================================
-    # 1️⃣ SOLICITAR CSV
-    # ============================================================
-
-    await ctx.send(
-        "📎 **Necesito el reporte de Catharsis.**\n"
-        "Adjunta aquí el archivo `.csv` y envíalo en este canal.\n\n"
-        "🌸 El archivo debe ser el reporte de vistas de mangas."
-    )
-
-    def comprobar_csv(message):
-        return (
-            message.author.id == ctx.author.id
-            and message.channel.id == ctx.channel.id
-            and any(
-                archivo.filename.lower().endswith(".csv")
-                for archivo in message.attachments
-            )
-        )
-
+        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
+    await ctx.send("🔍 Procesando, porfavor espere...")
     try:
-        mensaje_csv = await bot.wait_for(
-            "message",
-            timeout=120,
-            check=comprobar_csv
-        )
-
-    except asyncio.TimeoutError:
-
-        return await ctx.send(
-            "⏰ Se agotó el tiempo de espera. "
-            "No se recibió ningún archivo CSV."
-        )
-
-    # ============================================================
-    # 2️⃣ DESCARGAR Y LEER CSV
-    # ============================================================
-
-    archivo_csv = next(
-        archivo
-        for archivo in mensaje_csv.attachments
-        if archivo.filename.lower().endswith(".csv")
-    )
-
-    await ctx.send(
-        f"📖 Leyendo **{archivo_csv.filename}**..."
-    )
-
-    ruta_csv = None
-
-    try:
-
-        # Descargar archivo a memoria
-        contenido_csv = await archivo_csv.read()
-
-        # Intentar UTF-8 con BOM
-        try:
-            texto_csv = contenido_csv.decode("utf-8-sig")
-
-        except UnicodeDecodeError:
-
-            # Fallback común para archivos exportados
-            texto_csv = contenido_csv.decode("latin-1")
-
-        # ========================================================
-        # Crear datos directamente desde el texto
-        # ========================================================
-
-        datos_csv = {}
-
-        lector_csv = csv.DictReader(
-            io.StringIO(texto_csv),
-            delimiter=";"
-        )
-
-        for fila in lector_csv:
-
-            cath_id = str(
-                fila.get("ID", "")
-            ).strip()
-
-            capitulos = str(
-                fila.get("Capítulos", "")
-            ).strip()
-
-            if not cath_id:
-                continue
-
-            if not capitulos:
-                capitulos = "N/D"
-
-            datos_csv[cath_id] = capitulos
-
-        if not datos_csv:
-
-            return await ctx.send(
-                "❌ El CSV no contiene datos válidos."
-            )
-
-        await ctx.send(
-            f"✅ CSV leído correctamente.\n"
-            f"📊 Se encontraron **{len(datos_csv)} proyectos**."
-        )
-
-        print(
-            f"📊 CATHARSIS CSV: "
-            f"{len(datos_csv)} proyectos cargados."
-        )
-
-    except Exception as e:
-
-        print(
-            f"❌ Error procesando CSV de Catharsis: {e}"
-        )
-
-        return await ctx.send(
-            f"❌ No pude interpretar el CSV.\n"
-            f"Error: `{e}`"
-        )
-
-    # ============================================================
-    # 3️⃣ LEER LISTA DE PROYECTOS
-    # ============================================================
-
-    await ctx.send(
-        "🔍 Procesando lista de proyectos..."
-    )
-
-    try:
-
-        range_name = f"{SHEET_NAME}!B2:B"
-
-        resp = sheet.values().get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=range_name
-        ).execute()
-
-        canales = [
-            row[0].strip()
-            for row in resp.get("values", [])
-            if row
-        ]
-
+        # 1️⃣ Leer la columna B de la hoja LISTA (canales)
+        range_name = f"{SHEET_NAME}!B2:B"  # columna B desde fila 2
+        resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        canales = [row[0].strip() for row in resp.get("values", []) if row]
         if not canales:
-
-            return await ctx.send(
-                "❌ No se encontraron canales "
-                "en la columna B."
+            return await ctx.send("❌ No se encontraron canales en la columna B.")
+        # 2️⃣ Enviar mensaje de progreso inicial
+        progress_msg = await ctx.send(f"🔄 Autollamado de sitios, revisando canales 0/{len(canales)}")
+        # 3️⃣ Recorrer cada canal y ejecutar !sitio
+        for i, canal_nombre in enumerate(canales, start=1):
+            canal_obj = discord.utils.get(ctx.guild.channels, name=canal_nombre)
+            if not canal_obj:
+                await progress_msg.edit(content=f"⚠ Canal **{canal_nombre}** no encontrado. {i}/{len(canales)}")
+                await asyncio.sleep(1)
+                continue
+            # Actualizar mensaje de progreso
+            await progress_msg.edit(content=f"⏳ Procesando canal {i}/{len(canales)}: **{canal_nombre}**")
+            # DummyCtx para invocar !sitio en el canal correcto
+            class DummyMessage:
+                def __init__(self, author, channel):
+                    self.author = author
+                    self.channel = channel
+                    self.attachments = []
+            class DummyCtx:
+                def __init__(self, bot, channel, guild, author, send):
+                    self.bot = bot
+                    self.channel = channel
+                    self.guild = guild
+                    self.author = author
+                    self.send = send
+                    self.message = DummyMessage(author, channel)
+                    self.view = None
+            dummy_ctx = DummyCtx(
+                bot=ctx.bot,
+                channel=canal_obj,
+                guild=ctx.guild,
+                author=ctx.author,
+                send=canal_obj.send  # ⚡ enviará embeds en el canal correcto
             )
-
+            await sitio.invoke(dummy_ctx)
+            await asyncio.sleep(3)  # espera de 3 segundos antes del siguiente canal
+        # 4️⃣ Finalizar mensaje de progreso
+        await progress_msg.edit(content=f"✅ Actualización completada: revisados {len(canales)}/{len(canales)} canales")
+        # 5️⃣ Llamar !table en el canal de invocación
+        await table.invoke(ctx)
     except Exception as e:
-
-        print(
-            f"❌ Error leyendo canales: {e}"
-        )
-
-        return await ctx.send(
-            f"❌ Error leyendo la hoja LISTA: `{e}`"
-        )
-
-    # ============================================================
-    # 4️⃣ MENSAJE DE PROGRESO
-    # ============================================================
-
-    progress_msg = await ctx.send(
-        f"🔄 Autollamado de sitios, "
-        f"revisando canales 0/{len(canales)}"
-    )
-
-    # ============================================================
-    # 5️⃣ RECORRER CADA CANAL
-    # ============================================================
-
-    for i, canal_nombre in enumerate(canales, start=1):
-
-        canal_obj = discord.utils.get(
-            ctx.guild.channels,
-            name=canal_nombre
-        )
-
-        if not canal_obj:
-
-            await progress_msg.edit(
-                content=(
-                    f"⚠ Canal **{canal_nombre}** "
-                    f"no encontrado. "
-                    f"{i}/{len(canales)}"
-                )
-            )
-
-            await asyncio.sleep(1)
-            continue
-
-        # --------------------------------------------------------
-        # Actualizar progreso
-        # --------------------------------------------------------
-
-        await progress_msg.edit(
-            content=(
-                f"⏳ Procesando canal "
-                f"{i}/{len(canales)}: "
-                f"**{canal_nombre}**"
-            )
-        )
-
-        # --------------------------------------------------------
-        # DummyCtx
-        # --------------------------------------------------------
-
-        class DummyMessage:
-
-            def __init__(self, author, channel):
-
-                self.author = author
-                self.channel = channel
-                self.attachments = []
-
-        class DummyCtx:
-
-            def __init__(
-                self,
-                bot,
-                channel,
-                guild,
-                author,
-                send,
-                datos_csv
-            ):
-
-                self.bot = bot
-                self.channel = channel
-                self.guild = guild
-                self.author = author
-                self.send = send
-
-                self.message = DummyMessage(
-                    author,
-                    channel
-                )
-
-                self.view = None
-
-                # Datos del reporte de Catharsis
-                self.datos_csv = datos_csv
-
-        dummy_ctx = DummyCtx(
-            bot=ctx.bot,
-            channel=canal_obj,
-            guild=ctx.guild,
-            author=ctx.author,
-            send=canal_obj.send,
-            datos_csv=datos_csv
-        )
-
-        # --------------------------------------------------------
-        # Ejecutar !sitio
-        # --------------------------------------------------------
-
-        await sitio.invoke(dummy_ctx)
-
-        await asyncio.sleep(3)
-
-    # ============================================================
-    # 6️⃣ FINALIZAR
-    # ============================================================
-
-    await progress_msg.edit(
-        content=(
-            f"✅ Actualización completada: "
-            f"revisados {len(canales)}/{len(canales)} canales"
-        )
-    )
-
-    # ============================================================
-    # 7️⃣ GENERAR TABLE
-    # ============================================================
-
-    await table.invoke(ctx)
-
+        await ctx.send(f"❌ Error durante !gen: {e}")
+        print(f"❌ Error en comando !gen: {e}")
 # Comando !update
 @bot.command(name="update")
 @canal_permitido("update")
@@ -3181,14 +3695,8 @@ async def updater_cmd(ctx: commands.Context):
                 return
         # 4.1 — Resolver link Catharsis con dominios alternativos si el fijado falla
         if vars_dict.get("LINK_CATH"):
-            if LOBOTOMIA:
-                vars_dict["LINK_CATH"] = lobotomizar_cath_link(
-                    vars_dict["LINK_CATH"]
-                )
-            else:
-                vars_dict["LINK_CATH"] = await resolve_cath_domain(
-                    vars_dict["LINK_CATH"]
-                )
+            resolved_cath = await resolve_cath_domain(vars_dict["LINK_CATH"])
+            vars_dict["LINK_CATH"] = resolved_cath
         # 4.2 — Resolver link Lector
         if vars_dict.get("LINK_LEC"):
             resolved_lec = await resolve_lec_domain(vars_dict["LINK_LEC"])
@@ -3231,7 +3739,6 @@ async def updater_cmd(ctx: commands.Context):
                     project_channel=vars_dict["CHANNEL_OBJ"],
                     numeros=numeros
                 )
-
                 if cover_url:
                     cover_temp_path = await descargar_cover(cover_url)
             except Exception as e:
@@ -3245,7 +3752,6 @@ async def updater_cmd(ctx: commands.Context):
         if LINK_CATH:
             LINK_CATH = await resolve_cath_domain(LINK_CATH)
         # 7) enviar preview y status
-
         await ctx.send("👇 **Previsualización FACEBOOK**\n\n" + "```" + texto + "```") #siempre
         await ctx.send("👇 **Previsualización TELEGRAM**\n\n" + "```" + texto_tel + "```") #siempre
         await ctx.send("👇 **Previsualización DISCORD**\n\n" + "```" + texto_dis + "```") #siempre
@@ -3257,7 +3763,6 @@ async def updater_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
 #        if vars_dict.get("LINK_COL"):
 #            await ctx.send("👇 **Previsualización CAPIBARA**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de capibara
-
         canal_real = vars_dict.get("CHANNEL_OBJ")
         # 8) Anuncio automático en el canal del proyecto
         try:
@@ -3282,7 +3787,6 @@ async def updater_cmd(ctx: commands.Context):
     except Exception as e:
         print("Error en comando !update:", e)
         await ctx.send(f"❌ Ocurrió un error inesperado: {e}")
-        
 # Comando !upraw
 @bot.command()
 @rol_permitido("upraw")
@@ -4315,41 +4819,31 @@ async def create(ctx):
 async def ficha_cmd(ctx: commands.Context):
     author = ctx.author
     timeout = 250
-
     try:
         canal_actual = ctx.channel.name.lower()
-
         await ctx.send("*🔎 Revisando si el canal ya tiene ficha...*")
-
         rows = get_sheet_rows()
-
         # Verificar duplicado en columna B
         for row in rows:
             if len(row) > 1:
                 if row[1].strip().lower() == canal_actual:
                     await ctx.send("❌ *Este canal ya tiene una ficha registrada. Proceso cancelado.*")
                     return
-
         # Obtener siguiente número de item
         numeros = []
         fila_reutilizable = None
         fila_index_real = None  # fila real en la hoja (contando encabezado)
-
         for i, row in enumerate(rows):
             fila_real = i + 2  # porque empezamos en A2
-
             col_a = row[0].strip() if len(row) > 0 and row[0] else ""
             col_b = row[1].strip() if len(row) > 1 and row[1] else ""
-
             # Guardar números válidos
             if col_a.isdigit():
                 numeros.append(int(col_a))
-
                 # Detectar fila reutilizable
                 if col_b == "" and fila_reutilizable is None:
                     fila_reutilizable = int(col_a)
                     fila_index_real = fila_real
-
         # Decidir número a usar
         if fila_reutilizable:
             nuevo_item = fila_reutilizable
@@ -4357,9 +4851,7 @@ async def ficha_cmd(ctx: commands.Context):
         else:
             nuevo_item = max(numeros) + 1 if numeros else 1
             fila_objetivo = len(rows) + 2  # nueva fila al final
-
         nuevo_nombre = f"{nuevo_item}-{canal_actual}"
-
         # Escribir A y B en la fila objetivo
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
@@ -4371,19 +4863,16 @@ async def ficha_cmd(ctx: commands.Context):
                 "", "", "", ""
             ]]}
         ).execute()
-
         # Intentar renombrar canal
         try:
             await ctx.channel.edit(name=nuevo_nombre)
             await ctx.send(f"*✅ Canal renombrado automáticamente a* **{nuevo_nombre}**")
         except:
             await ctx.send(f"⚠️ *No pude renombrar el canal automáticamente.\nSe recomienda cambiarlo a {nuevo_nombre}*")
-
         # PEDIR TÍTULO
         await ctx.send(f" > Escriba el título del proyecto:")
         msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
         titulo = msg.content.strip()
-
         # Actualizar columna C
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
@@ -4391,31 +4880,26 @@ async def ficha_cmd(ctx: commands.Context):
             valueInputOption="USER_ENTERED",
             body={"values": [[titulo]]}
         ).execute()
-
         # SINOPSIS
         await ctx.send(f" > Escriba la sinopsis del proyecto:")
         msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
         sinopsis = msg.content.strip()
-
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!D{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[sinopsis]]}
         ).execute()
-
         # GÉNEROS
         await ctx.send(f" > Inserte los géneros separados por coma y espacio *(Ej: Acción, Drama, BL)*:")
         msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
         generos = msg.content.strip()
-
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!E{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[generos]]}
         ).execute()
-
         # TIPO
         await ctx.send(
             f" > Escribe el número correspondiente al tipo:\n"
@@ -4425,9 +4909,7 @@ async def ficha_cmd(ctx: commands.Context):
             f"`4` - Novela\n"
             f"`5` - Webtoon"
         )
-
         msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
-
         tipos = {
             "1": "Manhwa",
             "2": "Manga",
@@ -4435,27 +4917,94 @@ async def ficha_cmd(ctx: commands.Context):
             "4": "Novela",
             "5": "Webtoon"
         }
-
         tipo = tipos.get(msg.content.strip(), "Manhwa")
-
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!F{fila_objetivo}",
             valueInputOption="USER_ENTERED",
             body={"values": [[tipo]]}
         ).execute()
+        # ==========================================================
+        # TELEGRAM — CREAR TOPIC Y GUARDAR LINK EN COLUMNA M
+        # ==========================================================
 
+        try:
+            link_topic = await crear_topic_telegram(nuevo_nombre)
+
+            sheet.values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{SHEET_NAME2}!M{fila_objetivo}",
+                valueInputOption="USER_ENTERED",
+                body={
+                    "values": [[link_topic]]
+                }
+            ).execute()
+
+            print(
+                f"✅ Ficha → Link de Telegram guardado "
+                f"en M{fila_objetivo}: {link_topic}"
+            )
+
+        except Exception as e:
+            print(
+                f"❌ Ficha → No se pudo crear/guardar "
+                f"el topic de Telegram: {e}"
+            )
+
+            await ctx.send(
+                "⚠️ La ficha se completó, pero no pude crear "
+                "el topic de Telegram automáticamente."
+            )
+        # ==========================================================
+        # DRIVE — BUSCAR TYPE Y GUARDAR EN COLUMNA N
+        # ==========================================================
+
+        try:
+            link_type = await encontrar_drive_type(ctx.channel)
+
+            if link_type:
+
+                sheet.values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{SHEET_NAME2}!N{fila_objetivo}",
+                    valueInputOption="USER_ENTERED",
+                    body={
+                        "values": [[link_type]]
+                    }
+                ).execute()
+
+                print(
+                    f"✅ Ficha → Link de Drive TYPE guardado "
+                    f"en N{fila_objetivo}: {link_type}"
+                )
+
+            else:
+
+                await ctx.send(
+                    "⚠️ La ficha se completó, pero no pude encontrar "
+                    "la carpeta **Type/Edición/Typeset** en Drive."
+                )
+
+        except Exception as e:
+
+            print(
+                f"❌ Ficha → No se pudo obtener/guardar "
+                f"la carpeta TYPE de Drive: {e}"
+            )
+
+            await ctx.send(
+                "⚠️ La ficha se completó, pero ocurrió un error "
+                "al buscar la carpeta TYPE en Drive."
+            )
         await ctx.send(
             f"*🎉 ¡Ficha completada!*\n"
             f"## El código único del proyecto es: **{nuevo_item}**"
         )
-
     except asyncio.TimeoutError:
         await ctx.send("*⏰ Tiempo agotado. Proceso cancelado.*")
     except Exception as e:
         print("Error en !ficha:", e)
         await ctx.send(f"*❌ Ocurrió un error inesperado: {e}*")
-
 # Comando !scan
 @bot.command()
 @rol_permitido("status")
