@@ -3619,7 +3619,7 @@ async def gen(ctx):
                 send=canal_obj.send  # ⚡ enviará embeds en el canal correcto
             )
             await sitio.invoke(dummy_ctx)
-            await asyncio.sleep(5)  # espera de 5 segundos antes del siguiente canal
+            await asyncio.sleep(10)  # espera de 8 segundos antes del siguiente canal
         # 4️⃣ Finalizar mensaje de progreso
         await progress_msg.edit(content=f"✅ Actualización completada: revisados {len(canales)}/{len(canales)} canales")
         # 5️⃣ Llamar !table en el canal de invocación
@@ -4509,7 +4509,7 @@ async def type(ctx):
                 f"{extra_msg}"
                 f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
                 f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-                f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE**.\n"
+                f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE**.*\n"
                 f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
                 f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
                 f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
@@ -5450,7 +5450,7 @@ async def editar(ctx, *coordenadas):
                     body={"values": [["COMPLETADO (MANUAL)"]]}
                 ).execute()
 
-            await ctx.send(f"🛠 Asignación COMPLETADA MMANUALMENTE correspondiente a *({len(coords)} filas)*")
+            await ctx.send(f"🛠 Asignación COMPLETADA MANUALMENTE correspondiente a *({len(coords)} filas)*")
 
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
