@@ -47,6 +47,7 @@ ROLES_COMANDOS = {
     "gen": [1470647289860063263, 1357527939226533920],
     "status": [1470647289860063263, 1357527939226533920],
     "ficha": [1470647289860063263, 1357527939226533920],
+    "acmin":[1357527939226533920],
 }
 
 CANALES_REGISTRO = {
@@ -4037,6 +4038,237 @@ async def upraw(ctx):
         mensaje_final += f"📝 Nota: Roles bloqueados: **{roles_bloqueados_texto}**\n"
     mensaje_final += "Todo quedó guardado en la hoja **ASIGNACIONES** 💖✨"
     await ctx.send(mensaje_final)
+
+# Comando !liquidar
+@bot.command()
+@rol_permitido("acmin")
+async def liquidar(ctx):
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+    if len(ctx.message.channel_mentions) > 0:
+        ch = ctx.message.channel_mentions[0]
+        proyecto = f"#{ch.name}"
+    else:
+        # También permite escribir el nombre manualmente
+        partes = ctx.message.content.split(maxsplit=1)
+        if len(partes) < 2:
+            return await ctx.send(
+                "❌ Debes indicar el canal/proyecto.\n"
+                "Ejemplo: `!liquidar #canal-del-proyecto`"
+            )
+        proyecto = partes[1].strip()
+        # Si por alguna razón vienen varios argumentos,
+        # nos quedamos con el primero.
+        proyecto = proyecto.split()[0]
+    hoja = SHEET_NAME3
+    try:
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{hoja}!A:Y"
+        ).execute()
+    except Exception as e:
+        return await ctx.send(
+            f"❌ **Error al leer la hoja ASIGNACIONES:**\n"
+            f"```text\n{e}\n```"
+        )
+    rows = data.get("values", [])
+    filas_proyecto = []
+    for indice, row in enumerate(rows):
+        # Saltar cabecera
+        if indice == 0:
+            continue
+        # A:Y = 25 columnas
+        row = row + [""] * (25 - len(row))
+        proyecto_fila = str(row[1]).strip()
+        if proyecto_fila == proyecto:
+            filas_proyecto.append(
+                (indice + 1, row)
+            )
+    # Si no existe ninguna fila para ese proyecto
+    if not filas_proyecto:
+        return await ctx.send(
+            "📭 **Este proyecto no tiene capítulos en cola.**"
+        )
+    liquidaciones = []
+    for numero_fila, row in filas_proyecto:
+        capitulo = str(row[2]).strip()
+        trad = str(row[4]).strip()
+        clean = str(row[5]).strip()
+        type_ = str(row[6]).strip()
+        roles_vacios = []
+        if trad == "":
+            roles_vacios.append("TRAD")
+        if clean == "":
+            roles_vacios.append("CLEAN")
+        if type_ == "":
+            roles_vacios.append("TYPE")
+        if roles_vacios:
+            liquidaciones.append(
+                {
+                    "fila": numero_fila,
+                    "capitulo": capitulo,
+                    "roles": roles_vacios
+                }
+            )
+    if not liquidaciones:
+        return await ctx.send(
+            "📋 **No hay roles en capítulos pendientes para liquidar "
+            "en este proyecto.**\n\n"
+            "Todos los roles revisados ya tienen algún estado "
+            "o asignación."
+        )
+    filas_tabla = []
+    for numero_fila, row in filas_proyecto:
+        capitulo = str(row[2]).strip()
+        trad = str(row[4]).strip()
+        clean = str(row[5]).strip()
+        type_ = str(row[6]).strip()
+        # Si tiene cualquier valor, significa que está ocupado.
+        # Si está vacío, será liquidado.
+        traduccion = "RESERVA" if trad else ""
+        limpieza = "RESERVA" if clean else ""
+        edicion = "RESERVA" if type_ else ""
+        filas_tabla.append(
+            f"| {capitulo:^8} | "
+            f"{traduccion:^10} | "
+            f"{limpieza:^8} | "
+            f"{edicion:^7} |"
+        )
+    encabezado_tabla = (
+        "+----------+------------+----------+---------+\n"
+        "| CAPÍTULO | TRADUCCIÓN | LIMPIEZA | EDICIÓN |\n"
+        "+----------+------------+----------+---------+"
+    )
+    cierre_tabla = (
+        "+----------+------------+----------+---------+"
+    )
+    LIMITE_TABLA = 1500
+    secciones = []
+    seccion_actual = []
+    for fila in filas_tabla:
+        prueba = (
+            encabezado_tabla
+            + "\n"
+            + "\n".join(seccion_actual + [fila])
+            + "\n"
+            + cierre_tabla
+        )
+        if len(prueba) > LIMITE_TABLA and seccion_actual:
+            secciones.append(seccion_actual)
+            seccion_actual = [fila]
+        else:
+            seccion_actual.append(fila)
+    # Agregar la última sección
+    if seccion_actual:
+        secciones.append(seccion_actual)
+    total_secciones = len(secciones)
+    admin_marcador = f"@{ctx.author.display_name}"
+    for indice_seccion, filas in enumerate(secciones, start=1):
+        tabla = (
+            encabezado_tabla
+            + "\n"
+            + "\n".join(filas)
+            + "\n"
+            + cierre_tabla
+        )
+        mensaje = (
+            f"📄 **Previsualización — "
+            f"{indice_seccion}/{total_secciones}**\n"
+            f"```text\n{tabla}\n```"
+        )
+        # Solo agregar información adicional al último mensaje.
+        if indice_seccion == total_secciones:
+            mensaje += (
+                "\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ Los roles que que ya tienen estado de ASIGNACIÓN/COMPLETADO **NO serán modificados.**\n"
+                f"Los roles vacíos se cerrarán a nombre de "
+                f"**{admin_marcador}**.\n\n"
+                "🟢 `1` → Confirmar liquidación\n"
+                "🔴 `0` → Cancelar"
+            )
+        await ctx.send(mensaje)
+    try:
+        confirmacion = await bot.wait_for(
+            "message",
+            check=check,
+            timeout=60
+        )
+    except asyncio.TimeoutError:
+        return await ctx.send(
+            "⏳ Se acabó el tiempo para confirmar.\n"
+            "La liquidación ha sido cancelada y no se realizó "
+            "ningún cambio."
+        )
+    respuesta = confirmacion.content.strip()
+    if respuesta == "0":
+        return await ctx.send(
+            "❌ **Liquidación cancelada.**\n"
+            "No se realizó ningún cambio."
+        )
+    if respuesta != "1":
+        return await ctx.send(
+            "❌ Respuesta inválida.\n"
+            "Debes escribir `1` para confirmar o `0` para cancelar.\n"
+            "No se realizó ningún cambio."
+        )
+    updates = []
+    metadatos = {
+        "TRAD": ["L", "O", "S", "V", "Y"],
+        "CLEAN": ["M", "P", "T", "W", "Y"],
+        "TYPE": ["N", "Q", "U", "X", "Y"],
+    }
+    columna_estado = {
+        "TRAD": "E",
+        "CLEAN": "F",
+        "TYPE": "G",
+    }
+    for item in liquidaciones:
+        fila = item["fila"]
+        for rol in item["roles"]:
+            # Limpiar metadatos del proceso
+            for columna in metadatos[rol]:
+                updates.append(
+                    {
+                        "range": f"{hoja}!{columna}{fila}",
+                        "values": [[""]]
+                    }
+                )
+            # Colocar marcador administrativo
+            updates.append(
+                {
+                    "range": (
+                        f"{hoja}!"
+                        f"{columna_estado[rol]}"
+                        f"{fila}"
+                    ),
+                    "values": [[admin_marcador]]
+                }
+            )
+    try:
+        sheet.values().batchUpdate(
+            spreadsheetId=SPREADSHEET_ID,
+            body={
+                "valueInputOption": "RAW",
+                "data": updates
+            }
+        ).execute()
+    except Exception as e:
+        return await ctx.send(
+            f"❌ **Ocurrió un error durante la liquidación.**\n"
+            f"```text\n{e}\n```"
+        )
+    total_labores = sum(
+        len(item["roles"])
+        for item in liquidaciones
+    )
+    await ctx.send(
+        "💧 **LIQUIDACIÓN COMPLETADA**\n\n"
+        f"📚 Capítulos afectados: **{len(liquidaciones)}**\n"
+        f"🔒 Roles liquidados: **{total_labores}**\n"
+        f"👤 Responsable: **{admin_marcador}**\n\n"
+        "✨ *Los roles liquidados quedaron cerrados por manejo de ADMINISTRADOR.*"
+    )
 
 # Comando !trad
 @bot.command()
