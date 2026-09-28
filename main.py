@@ -1588,66 +1588,43 @@ telegram_client = TelegramClient(
     TELEGRAM_API_ID,
     TELEGRAM_API_HASH
 )
-# ==========================================================
-# FORMATO DEL TOPIC DE TELEGRAM
-# ==========================================================
-
+# FORMATO DEL TOPIC DE TELEGRAM---------
 def formatear_topic_telegram(nombre):
     """
     Convierte:
-
         001-el-tanque-de-rango-c-no-morirá
-
     en:
-
         001 | El tanque de rango c no morirá
     """
-
     partes = nombre.split("-", 1)
-
     if len(partes) == 2:
         num, titulo = partes
-
         titulo = titulo.replace("-", " ").capitalize()
-
         return f"{num} | {titulo}"
-
     return nombre
-# ==========================================================
-# CREAR TOPIC EN TELEGRAM
-# ==========================================================
-
+# CREAR TOPIC EN TELEGRAM----------
 async def crear_topic_telegram(nombre_canal):
     """
     Crea un Topic en el grupo de Telegram y devuelve
     el enlace directo al Topic.
-
     Ejemplo:
-
         https://t.me/c/3595221763/1517
     """
-
     titulo_topic = formatear_topic_telegram(nombre_canal)
-
     print(
         f"📱 Telegram → Creando topic:\n"
         f"   Canal Discord: {nombre_canal}\n"
         f"   Topic: {titulo_topic}"
     )
-
     try:
-        # --------------------------------------------------
-        # Asegurar conexión con Telegram
-        # --------------------------------------------------
+        # Asegurar conexión con Telegram----------
         if not telegram_client.is_connected():
             print("🔌 Telegram → Conectando...")
             await telegram_client.connect()
-
         if not telegram_client.is_connected():
             raise RuntimeError(
                 "No se pudo establecer conexión con Telegram."
             )
-
         # --------------------------------------------------
         # Crear Topic
         #
@@ -1660,27 +1637,21 @@ async def crear_topic_telegram(nombre_canal):
                 titulo_topic
             )
         )
-
         # --------------------------------------------------
         # Buscar específicamente el mensaje de creación
         # del Topic.
         # --------------------------------------------------
         topic_id = None
-
         for update in getattr(resultado, "updates", []):
-
             mensaje = getattr(update, "message", None)
-
             if not isinstance(mensaje, MessageService):
                 continue
-
             if isinstance(
                 mensaje.action,
                 MessageActionTopicCreate
             ):
                 topic_id = mensaje.id
                 break
-
         # --------------------------------------------------
         # Validar que obtuvimos el ID
         # --------------------------------------------------
@@ -1689,7 +1660,6 @@ async def crear_topic_telegram(nombre_canal):
                 "Telegram creó el topic, pero no se pudo "
                 "obtener el ID del mensaje principal."
             )
-
         # --------------------------------------------------
         # Convertir:
         #
@@ -1700,97 +1670,137 @@ async def crear_topic_telegram(nombre_canal):
         # 3595221763
         # --------------------------------------------------
         grupo_link_id = str(TELEGRAM_GRUPO_ID)
-
         if grupo_link_id.startswith("-100"):
             grupo_link_id = grupo_link_id[4:]
-
         # --------------------------------------------------
         # Construir enlace directo
         # --------------------------------------------------
         link_topic = (
             f"https://t.me/c/{grupo_link_id}/{topic_id}"
         )
-
         print(
             f"✅ Telegram → Topic creado correctamente.\n"
             f"   Título: {titulo_topic}\n"
             f"   ID: {topic_id}\n"
             f"   Link: {link_topic}"
         )
-
         return link_topic
-
     except Exception as e:
-
         print(
             f"❌ Telegram → Error creando topic "
             f"'{titulo_topic}': {e}"
         )
-
+        raise
+# ==========================================================
+# COVER — CREAR MENSAJE + HILO PARA EL PROYECTO
+# ==========================================================
+async def crear_hilo_cover(guild, canal_proyecto):
+    """
+    Busca el canal #cover, publica una mención del canal
+    del proyecto y crea un hilo debajo de ese mensaje.
+    Dentro del hilo vuelve a mencionar el canal del proyecto.
+    Ejemplo:
+    #cover
+        └── #001-el-tanque-de-rango-c-no-morirá
+             └── 🧵 001-el-tanque-de-rango-c-no-morirá
+                  └── #001-el-tanque-de-rango-c-no-morirá
+    """
+    try:
+        # --------------------------------------------------
+        # Buscar canal #cover
+        # --------------------------------------------------
+        canal_cover = discord.utils.get(
+            guild.text_channels,
+            name="cover"
+        )
+        if not canal_cover:
+            raise RuntimeError(
+                "No encontré el canal #cover en el servidor."
+            )
+        print(
+            f"🧵 Cover → Creando hilo para "
+            f"#{canal_proyecto.name}"
+        )
+        # --------------------------------------------------
+        # Crear mensaje inicial mencionando el canal
+        # --------------------------------------------------
+        mensaje = await canal_cover.send(
+            canal_proyecto.mention
+        )
+        # --------------------------------------------------
+        # Crear hilo debajo del mensaje
+        # --------------------------------------------------
+        hilo = await mensaje.create_thread(
+            name=canal_proyecto.name,
+            auto_archive_duration=1440
+        )
+        # --------------------------------------------------
+        # Primer mensaje dentro del hilo
+        # --------------------------------------------------
+        await hilo.send(
+            canal_proyecto.mention
+        )
+        print(
+            f"✅ Cover → Hilo creado correctamente.\n"
+            f"   Canal: #{canal_proyecto.name}\n"
+            f"   Hilo: {hilo.name}\n"
+            f"   Link: {hilo.jump_url}"
+        )
+        return hilo.jump_url
+    except Exception as e:
+        print(
+            f"❌ Cover → Error creando hilo para "
+            f"#{canal_proyecto.name}: {e}"
+        )
         raise
 # ==========================================================
 # DRIVE — ENCONTRAR CARPETA TYPE DESDE LOS PINS
 # ==========================================================
-
 async def encontrar_drive_type(channel):
     """
     Lee los mensajes fijados del canal, encuentra un enlace
     de Google Drive y busca dentro de esa carpeta la carpeta
     correspondiente a TYPE.
-
     Nombres aceptados:
         Type
         Ed
         Edición
         Edit
         Typeset
-
     Devuelve:
         URL de la carpeta TYPE
         o None si no se encuentra.
     """
-
     try:
         pins = await channel.pins()
     except Exception as e:
         print(f"❌ Drive → No pude leer los pins: {e}")
         return None
-
     # ------------------------------------------------------
     # Buscar enlaces de Drive en los mensajes fijados
     # ------------------------------------------------------
-
     drive_links = []
-
     for msg in pins:
-
         text = (
             (msg.content or "")
             + "\n"
             + " ".join(att.url for att in msg.attachments)
         )
-
         links = extract_drive_links(text)
-
         for link in links:
             if link not in drive_links:
                 drive_links.append(link)
-
     if not drive_links:
         print("⚠️ Drive → No encontré ningún enlace de Drive en los pins.")
         return None
-
     # ------------------------------------------------------
     # Autenticación
     # ------------------------------------------------------
-
     creds = authenticate()
     service = build("drive", "v3", credentials=creds)
-
     # ------------------------------------------------------
     # Nombres válidos para la carpeta TYPE
     # ------------------------------------------------------
-
     nombres_type = {
         "type",
         "ed",
@@ -1799,69 +1809,49 @@ async def encontrar_drive_type(channel):
         "edit",
         "typeset"
     }
-
     # ------------------------------------------------------
     # Revisar cada carpeta de Drive encontrada
     # ------------------------------------------------------
-
     for link in drive_links:
-
         folder_id = extract_id(link)
-
         if not folder_id:
             continue
-
         try:
-
             items = service.files().list(
                 q=f"'{folder_id}' in parents and trashed=false",
                 fields="files(id,name,mimeType)"
             ).execute().get("files", [])
-
             # --------------------------------------------------
             # Buscar carpeta TYPE
             # --------------------------------------------------
-
             for item in items:
-
                 if item["mimeType"] != "application/vnd.google-apps.folder":
                     continue
-
                 nombre = item["name"].strip().lower()
-
                 if nombre in nombres_type:
-
                     type_id = item["id"]
-
                     # ------------------------------------------
                     # Construir URL directa de la carpeta
                     # ------------------------------------------
-
                     link_type = (
                         f"https://drive.google.com/drive/u/1/folders/{type_id}"
                     )
-
                     print(
                         f"✅ Drive → Carpeta TYPE encontrada:\n"
                         f"   Nombre: {item['name']}\n"
                         f"   ID: {type_id}\n"
                         f"   Link: {link_type}"
                     )
-
                     return link_type
-
         except Exception as e:
-
             print(
                 f"⚠️ Drive → Error revisando "
                 f"'{link}': {e}"
             )
-
     print(
         "⚠️ Drive → Encontré carpetas de Drive, "
         "pero no encontré una carpeta TYPE válida."
     )
-
     return None
 # Funciones de Saku_Update
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
@@ -5054,95 +5044,166 @@ async def ficha_cmd(ctx: commands.Context):
     timeout = 250
     try:
         canal_actual = ctx.channel.name.lower()
-        await ctx.send("*🔎 Revisando si el canal ya tiene ficha...*")
+        await ctx.send(
+            "*🔎 Revisando si el canal ya tiene ficha...*"
+        )
         rows = get_sheet_rows()
-        # Verificar duplicado en columna B
+        # VERIFICAR DUPLICADO EN COLUMNA B ----------
         for row in rows:
             if len(row) > 1:
                 if row[1].strip().lower() == canal_actual:
-                    await ctx.send("❌ *Este canal ya tiene una ficha registrada. Proceso cancelado.*")
+                    await ctx.send(
+                        "❌ *Este canal ya tiene una ficha registrada. "
+                        "Proceso cancelado.*"
+                    )
                     return
-        # Obtener siguiente número de item
+        # OBTENER SIGUIENTE NÚMERO DE ITEM ----------
         numeros = []
         fila_reutilizable = None
-        fila_index_real = None  # fila real en la hoja (contando encabezado)
+        fila_index_real = None
         for i, row in enumerate(rows):
-            fila_real = i + 2  # porque empezamos en A2
-            col_a = row[0].strip() if len(row) > 0 and row[0] else ""
-            col_b = row[1].strip() if len(row) > 1 and row[1] else ""
+            fila_real = i + 2
+            col_a = (
+                row[0].strip()
+                if len(row) > 0 and row[0]
+                else ""
+            )
+            col_b = (
+                row[1].strip()
+                if len(row) > 1 and row[1]
+                else ""
+            )
             # Guardar números válidos
             if col_a.isdigit():
                 numeros.append(int(col_a))
                 # Detectar fila reutilizable
-                if col_b == "" and fila_reutilizable is None:
+                if (
+                    col_b == ""
+                    and fila_reutilizable is None
+                ):
                     fila_reutilizable = int(col_a)
                     fila_index_real = fila_real
-        # Decidir número a usar
+        # DECIDIR NÚMERO A USAR ----------
         if fila_reutilizable:
             nuevo_item = fila_reutilizable
             fila_objetivo = fila_index_real
         else:
-            nuevo_item = max(numeros) + 1 if numeros else 1
-            fila_objetivo = len(rows) + 2  # nueva fila al final
-        nuevo_nombre = f"{nuevo_item}-{canal_actual}"
-        # Escribir A y B en la fila objetivo
+            nuevo_item = (
+                max(numeros) + 1
+                if numeros
+                else 1
+            )
+            fila_objetivo = len(rows) + 2
+        nuevo_nombre = (
+            f"{nuevo_item}-{canal_actual}"
+        )
+        # ESCRIBIR A:F ----------
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!A{fila_objetivo}:F{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": [[
-                str(nuevo_item),
-                nuevo_nombre,
-                "", "", "", ""
-            ]]}
+            body={
+                "values": [[
+                    str(nuevo_item),
+                    nuevo_nombre,
+                    "",
+                    "",
+                    "",
+                    ""
+                ]]
+            }
         ).execute()
-        # Intentar renombrar canal
+        # RENOMBRAR CANAL ----------
         try:
-            await ctx.channel.edit(name=nuevo_nombre)
-            await ctx.send(f"*✅ Canal renombrado automáticamente a* **{nuevo_nombre}**")
+            await ctx.channel.edit(
+                name=nuevo_nombre
+            )
+            await ctx.send(
+                f"*✅ Canal renombrado automáticamente a* "
+                f"**{nuevo_nombre}**"
+            )
         except:
-            await ctx.send(f"⚠️ *No pude renombrar el canal automáticamente.\nSe recomienda cambiarlo a {nuevo_nombre}*")
-        # PEDIR TÍTULO
-        await ctx.send(f" > Escriba el título del proyecto:")
-        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+            await ctx.send(
+                f"⚠️ *No pude renombrar el canal automáticamente.\n"
+                f"Se recomienda cambiarlo a {nuevo_nombre}*"
+            )
+        # PEDIR TÍTULO ----------
+        await ctx.send(
+            "> Escriba el título del proyecto:"
+        )
+        msg = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m:
+                m.author == author
+                and m.channel == ctx.channel
+        )
         titulo = msg.content.strip()
-        # Actualizar columna C
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!C{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": [[titulo]]}
+            body={
+                "values": [[titulo]]
+            }
         ).execute()
-        # SINOPSIS
-        await ctx.send(f" > Escriba la sinopsis del proyecto:")
-        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        # SINOPSIS ----------
+        await ctx.send(
+            "> Escriba la sinopsis del proyecto:"
+        )
+        msg = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m:
+                m.author == author
+                and m.channel == ctx.channel
+        )
         sinopsis = msg.content.strip()
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!D{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": [[sinopsis]]}
+            body={
+                "values": [[sinopsis]]
+            }
         ).execute()
-        # GÉNEROS
-        await ctx.send(f" > Inserte los géneros separados por coma y espacio *(Ej: Acción, Drama, BL)*:")
-        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        # GÉNEROS ----------
+        await ctx.send(
+            "> Inserte los géneros separados por coma y espacio "
+            "*(Ej: Acción, Drama, BL)*:"
+        )
+        msg = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m:
+                m.author == author
+                and m.channel == ctx.channel
+        )
         generos = msg.content.strip()
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!E{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": [[generos]]}
+            body={
+                "values": [[generos]]
+            }
         ).execute()
-        # TIPO
+        # TIPO ----------
         await ctx.send(
-            f" > Escribe el número correspondiente al tipo:\n"
-            f"`1` - Manhwa\n"
-            f"`2` - Manga\n"
-            f"`3` - Manhua\n"
-            f"`4` - Novela\n"
-            f"`5` - Webtoon"
+            "> Escribe el número correspondiente al tipo:\n"
+            "`1` - Manhwa\n"
+            "`2` - Manga\n"
+            "`3` - Manhua\n"
+            "`4` - Novela\n"
+            "`5` - Webtoon"
         )
-        msg = await bot.wait_for("message", timeout=timeout, check=lambda m: m.author == author and m.channel == ctx.channel)
+        msg = await bot.wait_for(
+            "message",
+            timeout=timeout,
+            check=lambda m:
+                m.author == author
+                and m.channel == ctx.channel
+        )
         tipos = {
             "1": "Manhwa",
             "2": "Manga",
@@ -5150,20 +5211,23 @@ async def ficha_cmd(ctx: commands.Context):
             "4": "Novela",
             "5": "Webtoon"
         }
-        tipo = tipos.get(msg.content.strip(), "Manhwa")
+        tipo = tipos.get(
+            msg.content.strip(),
+            "Manhwa"
+        )
         sheet.values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!F{fila_objetivo}",
             valueInputOption="USER_ENTERED",
-            body={"values": [[tipo]]}
+            body={
+                "values": [[tipo]]
+            }
         ).execute()
-        # ==========================================================
-        # TELEGRAM — CREAR TOPIC Y GUARDAR LINK EN COLUMNA M
-        # ==========================================================
-
+        # TELEGRAM — CREAR TOPIC Y GUARDAR LINK EN COLUMNA M ----------
         try:
-            link_topic = await crear_topic_telegram(nuevo_nombre)
-
+            link_topic = await crear_topic_telegram(
+                nuevo_nombre
+            )
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
                 range=f"{SHEET_NAME2}!M{fila_objetivo}",
@@ -5172,31 +5236,25 @@ async def ficha_cmd(ctx: commands.Context):
                     "values": [[link_topic]]
                 }
             ).execute()
-
             print(
                 f"✅ Ficha → Link de Telegram guardado "
                 f"en M{fila_objetivo}: {link_topic}"
             )
-
         except Exception as e:
             print(
                 f"❌ Ficha → No se pudo crear/guardar "
                 f"el topic de Telegram: {e}"
             )
-
             await ctx.send(
                 "⚠️ La ficha se completó, pero no pude crear "
                 "el topic de Telegram automáticamente."
             )
-        # ==========================================================
-        # DRIVE — BUSCAR TYPE Y GUARDAR EN COLUMNA N
-        # ==========================================================
-
+        # DRIVE — BUSCAR TYPE Y GUARDAR EN COLUMNA N ----------
         try:
-            link_type = await encontrar_drive_type(ctx.channel)
-
+            link_type = await encontrar_drive_type(
+                ctx.channel
+            )
             if link_type:
-
                 sheet.values().update(
                     spreadsheetId=SPREADSHEET_ID,
                     range=f"{SHEET_NAME2}!N{fila_objetivo}",
@@ -5205,39 +5263,64 @@ async def ficha_cmd(ctx: commands.Context):
                         "values": [[link_type]]
                     }
                 ).execute()
-
                 print(
                     f"✅ Ficha → Link de Drive TYPE guardado "
                     f"en N{fila_objetivo}: {link_type}"
                 )
-
             else:
-
                 await ctx.send(
-                    "⚠️ La ficha se completó, pero no pude encontrar "
-                    "la carpeta **Type/Edición/Typeset** en Drive."
+                    "⚠️ La ficha se completó, pero no pude "
+                    "encontrar la carpeta **Type/Edición/Typeset** "
+                    "en Drive."
                 )
-
         except Exception as e:
-
             print(
                 f"❌ Ficha → No se pudo obtener/guardar "
                 f"la carpeta TYPE de Drive: {e}"
             )
-
             await ctx.send(
                 "⚠️ La ficha se completó, pero ocurrió un error "
                 "al buscar la carpeta TYPE en Drive."
             )
+        # COVER — CREAR MENSAJE + HILO ----------
+        try:
+            link_cover = await crear_hilo_cover(
+                ctx.guild,
+                ctx.channel
+            )
+            print(
+                f"✅ Ficha → Hilo de Cover creado: "
+                f"{link_cover}"
+            )
+        except Exception as e:
+            print(
+                f"❌ Ficha → No se pudo crear "
+                f"el hilo de Cover: {e}"
+            )
+            await ctx.send(
+                "⚠️ La ficha se completó, pero no pude "
+                "crear el hilo correspondiente en **#cover**."
+            )
+        # FINAL ----------
         await ctx.send(
             f"*🎉 ¡Ficha completada!*\n"
-            f"## El código único del proyecto es: **{nuevo_item}**"
+            f"## El código único del proyecto es: "
+            f"**{nuevo_item}**"
         )
+    # TIMEOUT ----------
     except asyncio.TimeoutError:
-        await ctx.send("*⏰ Tiempo agotado. Proceso cancelado.*")
+        await ctx.send(
+            "*⏰ Tiempo agotado. Proceso cancelado.*"
+        )
+    # ERROR GENERAL ----------
     except Exception as e:
-        print("Error en !ficha:", e)
-        await ctx.send(f"*❌ Ocurrió un error inesperado: {e}*")
+        print(
+            "Error en !ficha:",
+            e
+        )
+        await ctx.send(
+            f"*❌ Ocurrió un error inesperado: {e}*"
+        )
 # Comando !scan
 @bot.command()
 @rol_permitido("status")
