@@ -23,5 +23,8 @@ colorama==0.4.6
 packaging==24.1
 Pillow==11.2.1
 
+# Headless browser
+playwright
+
 # (Opcional, solo si usarás endpoints o keepalive)
 # flask==3.1.2
