@@ -21,11 +21,13 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import CreateForumTopicRequest
 from telethon.tl.types import MessageService, MessageActionTopicCreate
+from play_fetcher import CatharsisFetcher
 
 # 💖 Editado por Rami
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_IDS = [int(x.strip()) for x in os.getenv("GUILD_IDS", "").split(",") if x.strip()]
+fetcher = CatharsisFetcher(headless=True, max_concurrency=1, cache_ttl=300)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -1369,6 +1371,52 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         "❌ No se pudo acceder a Catharsis "
         "después de varios intentos."
     )
+async def evento_cath_async(url, preestreno=False):
+    # la misma lógica de extracción de slug/lobotomía que ya tienes
+    if not url:
+        return "❌ No se proporcionó un enlace de Catharsis."
+    if LOBOTOMIA == 1:
+        url = lobotomizar_cath_link(url)
+    try:
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        if not path.startswith("manga/"):
+            return "❌ El enlace de Catharsis no tiene un formato válido."
+        slug = path[len("manga/"):].strip("/")
+        if not slug:
+            return "❌ No se pudo obtener el slug del manga."
+    except Exception:
+        return "❌ No se pudo interpretar el enlace de Catharsis."
+
+    is_new, payload = await fetcher.check_and_notify(slug)
+    if payload is None:
+        return "❌ No se logró obtener la respuesta de Catharsis."
+    api = payload["api"]
+    latest = payload["latest"]
+    total_capitulos = api.get("n_capitulos")
+    capitulos = api.get("capitulos") or []
+    if total_capitulos is None or not capitulos:
+        return "❌ Catharsis respondió, pero no devolvió los datos esperados."
+    numero = latest.get("numero")
+    fecha_raw = latest.get("fecha_publicacion") or latest.get("date_created")
+    fecha = "N/D"
+    if fecha_raw:
+        try:
+            fecha_obj = datetime.fromisoformat(fecha_raw.replace("Z", "+00:00"))
+            fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
+            fecha = fecha_a_dias_atras(fecha_formateada)
+        except Exception:
+            fecha = "N/D"
+    # aplicar preestreno si se pide (reusa tu lógica)
+    if preestreno:
+        try:
+            nf = float(str(numero).replace(",", "."))
+            if nf > 0:
+                nf -= 1
+            numero = str(int(nf)) if nf.is_integer() else str(nf)
+        except Exception:
+            pass
+    return f"CATHARSIS\n> Capítulo: {numero}\n> Actualizado: {fecha}"
 def evento_capi(url, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -2601,6 +2649,11 @@ async def on_ready():
     if not calendario_window.is_running():
         calendario_window.start()
     print(f"✨ Bot en línea como {bot.user}")
+    try:
+        await fetcher.start()
+        print("✅ Playwright/Chromium iniciado")
+    except Exception as e:
+        print("⚠️ No se pudo iniciar Playwright:", e)
 # Bloqueo global para registros
 registro_lock = asyncio.Lock()
 @bot.event
@@ -2882,8 +2935,10 @@ async def sitio(ctx):
     task_map = {}  # para saber qué resultado pertenece a qué sitio
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
+        tasks.append(evento_cath_async(pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
         task_map[len(tasks)-1] = "catharsis"
+        #tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
+        #task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
     # --- ETERNAL ---
