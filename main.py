@@ -21,18 +21,13 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import CreateForumTopicRequest
 from telethon.tl.types import MessageService, MessageActionTopicCreate
-from play_fetcher import CatharsisFetcher
-
 # 💖 Editado por Rami
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_IDS = [int(x.strip()) for x in os.getenv("GUILD_IDS", "").split(",") if x.strip()]
-fetcher = CatharsisFetcher(headless=True, max_concurrency=1, cache_ttl=300)
-
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 # - SISTEMA DE PERMISOS
 CANALES_COMANDOS = {
     "trad": [1314958804856733788, 1462211348380389426],
@@ -42,7 +37,6 @@ CANALES_COMANDOS = {
     "update": [1440464661031157940],
     "asset": [1484531526581620868],
 }
-
 ROLES_COMANDOS = {
     "upraw": [1479178635327045702, 1357527939226533920],
     "table": [1470647289860063263, 1357527939226533920],
@@ -51,13 +45,11 @@ ROLES_COMANDOS = {
     "ficha": [1470647289860063263, 1357527939226533920],
     "acmin":[1357527939226533920],
 }
-
 CANALES_REGISTRO = {
     "regis-trad": [1314989167851343963], 
     "regis-clean": [1420511464090898535],
     "regis-type": [1420511546874003614],
 }
-
 ROLES_INDIVIDUALES = {
     "admin_": [1357527939226533920], 
     "qc_": [1463686138689622250],
@@ -72,7 +64,6 @@ ROLES_INDIVIDUALES = {
     "cl_": [1314992238979321867],
     "cl_manga_": [1485736296205914112],
 }
-
 # — Configuración de la hoja
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
@@ -87,7 +78,6 @@ TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
 TELEGRAM_SESSION = os.getenv("TELEGRAM_SESSION")
 CATH_API_KEY = os.getenv("CATH_API_KEY", "")
 ultimo_calendario_run = None
-
 # — Crear credenciales de servicio
 SERVICE_ACCOUNT_FILE = "service_account.json"
 creds = service_account.Credentials.from_service_account_file(
@@ -97,11 +87,9 @@ creds = service_account.Credentials.from_service_account_file(
         "https://www.googleapis.com/auth/drive"
     ]
 )
-
 # — Crear cliente de Sheets
 sheet_service = build("sheets", "v4", credentials=creds)
 sheet = sheet_service.spreadsheets()
-
 # Funciones de Saku-COMMS
 def canal_permitido(nombre_comando):
     async def predicate(ctx):
@@ -113,30 +101,25 @@ def canal_permitido(nombre_comando):
             return False
         return True
     return commands.check(predicate)
-    
 def rol_permitido(nombre_comando):
     async def predicate(ctx):
         roles = ROLES_COMANDOS.get(nombre_comando, [])
         if not roles:
             return True
-
         if not any(role.id in roles for role in ctx.author.roles):
             await ctx.send("🌸 No puedes usar este comando ya que no tienes el rol adecuado, cielito.")
             return False
         return True
     return commands.check(predicate)
-
 # Funciones de Saku_Registra
 async def buscar_hilo(canal, nombre_hilo):
     for thread in canal.threads:
         if thread.name.upper() == nombre_hilo.upper():
             return thread
-
     async for thread in canal.archived_threads(limit=50):
         if thread.name.upper() == nombre_hilo.upper():
             return thread
     return None
-
 async def obtener_o_crear_hilo(canal, nombre):
     hilo = await buscar_hilo(canal, nombre)
     if hilo:
@@ -146,7 +129,6 @@ async def obtener_o_crear_hilo(canal, nombre):
         type=discord.ChannelType.public_thread
     )
     return hilo
-
 async def crear_registro_base(hilo):
     texto = "📒 REGISTRO\n\n"
     for i in range(100):
@@ -154,13 +136,11 @@ async def crear_registro_base(hilo):
     mensaje = await hilo.send(texto)
     await mensaje.pin()
     return mensaje
-
 async def obtener_registro(hilo):
     async for m in hilo.history(limit=10):
         if m.author == bot.user and "00 --" in m.content:
             return m
     return await crear_registro_base(hilo)
-
 # Funciones de Saku_Status
 def barra(valor: str, ancho=40):
     if not valor or valor in ["N/A", "0"]:
@@ -175,13 +155,10 @@ def barra(valor: str, ancho=40):
     if medio:
         barras += "|"
     return barras.ljust(ancho)
-
 def recortar_proyecto(nombre):
     nombre = nombre.strip()
-
     if not nombre:
         return nombre
-
     if nombre.startswith("#"):
         partes = nombre.split("-", 1)
         if len(partes) > 1:
@@ -191,7 +168,6 @@ def recortar_proyecto(nombre):
         return nombre
     else:
         return nombre.split("-")[0]
-
 # Funciones de Saku_Asigna 
 # Memoria temporal para todos los procesos
 assignments: Dict[int, Dict[str, Any]] = {}
@@ -209,7 +185,6 @@ ASSIGN_COOLDOWN = 30  #lo bajé a 30s para que no se vea tan ofensivo
 last_assign_time = 0
 DRIVE_COOLDOWN = 45  # segundos
 last_drive_time = 0
-
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
@@ -233,12 +208,10 @@ async def on_reaction_add(reaction, user):
             # --- Buscar en memoria ---
             mem = assignments.get(msg_id)
             now_ts = datetime.utcnow().timestamp()
-
             # Si existe en memoria, validar expiración
             if mem and now_ts - mem["timestamp"] > 300:
                 assignments.pop(msg_id, None)
                 mem = None
-
             # 🔥 SI NO EXISTE (o expiró), buscar SIEMPRE en Sheets
             if not mem:
                 print("[FALLBACK] Buscando en Sheets...")
@@ -246,14 +219,11 @@ async def on_reaction_add(reaction, user):
                 if not mem:
                     print("[FALLBACK] No encontrado en Sheets")
                     return
-
                 mem["timestamp"] = now_ts
                 assignments[msg_id] = mem
-
             # Validar proceso
             if mem["proceso"] != proceso:
                 return
-
             fila = mem["fila"]
             hoja = mem["hoja"]
             status_index, id_index = col_status, col_id
@@ -265,7 +235,6 @@ async def on_reaction_add(reaction, user):
                 valueInputOption="RAW",
                 body={"values": [["COMPLETADO"]]}
             ).execute()
-
             # borrar ID del mensaje
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
@@ -295,7 +264,6 @@ async def on_reaction_add(reaction, user):
                     )
                 else:
                     nuevo_contenido = f"{contenido}\nCapítulo completado, actualizado en tabla.\n\n"
-
                 await reaction.message.edit(content=nuevo_contenido)
             except:
                 await reaction.message.channel.send(
@@ -311,7 +279,6 @@ async def on_reaction_add(reaction, user):
     finally:
             await asyncio.sleep(REACTION_COOLDOWN)
             reaction_lock.release()
-
 def buscar_en_sheets_por_message_id(msg_id: int, proceso: str): 
     try:
         emoji_map = {
@@ -322,7 +289,6 @@ def buscar_en_sheets_por_message_id(msg_id: int, proceso: str):
         if proceso not in emoji_map:
             return None
         _, id_index = emoji_map[proceso]
-
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A:X"
@@ -340,12 +306,10 @@ def buscar_en_sheets_por_message_id(msg_id: int, proceso: str):
         print(f"[FALLBACK ERROR] {e}")
         traceback.print_exc()
         return None
-    
 async def check_assign_cooldown(ctx) -> bool:
     global last_assign_time
     now = time.time()
     remaining = ASSIGN_COOLDOWN - (now - last_assign_time)
-
     if remaining > 0:
         await ctx.send(
             f"⏳ El asignador está procesando otra solicitud.\n"
@@ -353,12 +317,10 @@ async def check_assign_cooldown(ctx) -> bool:
         )
         return False
     return True
-
 async def check_drive_cooldown(ctx) -> bool:
     global last_drive_time
     now = time.time()
     remaining = DRIVE_COOLDOWN - (now - last_drive_time)
-
     if remaining > 0:
         await ctx.send(
             f"⏳ SAKU_BOT está revisando otro proyecto por el momento.\n"
@@ -366,7 +328,6 @@ async def check_drive_cooldown(ctx) -> bool:
         )
         return False
     return True
-
 PROCESS_CONFIG = {
     "TRAD": {
         "status_col": 4,      # E
@@ -396,40 +357,31 @@ PROCESS_CONFIG = {
         "interval_hours": 2
     }
 }
-
 def format_cap(cap):
     if cap.is_integer():
         return str(int(cap))
     return str(cap)
-
 async def contar_caps_usuario(user_id: int, proceso: str) -> int:
     hoja = SHEET_NAME3
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{hoja}!A:N"
     ).execute()
-
     rows = data.get("values", [])
-
     count = 0
-
     # Columnas según proceso
     col_map = {
         "TRAD": 11,   # L
         "CLEAN": 12,  # M
         "TYPE": 13    # N
     }
-
     col_index = col_map.get(proceso)
     for i in range(1, len(rows)):
         row = rows[i] + [""] * 14
         usuario = str(row[col_index]).strip()
-
         if str(user_id) in usuario:
             count += 1
-
     return count
-
 def obtener_mensaje_newbie(progreso: int) -> str:
     mensajes = {
         1: "🥚 ¡Eres un huevito apenas rompiendo el cascarón, tú puedes!",
@@ -439,7 +391,6 @@ def obtener_mensaje_newbie(progreso: int) -> str:
         5: "🎓 ¡Ya estás listo para dejar el nido, soy lloros!"
     }
     return mensajes.get(progreso, "")
-        
 @tasks.loop(minutes=40)
 async def revisar_asignaciones_atrasadas():
     try:
@@ -450,46 +401,36 @@ async def revisar_asignaciones_atrasadas():
     except Exception as e:
         print("[SHEETS ERROR]", e)
         return
-
     rows = data.get("values", [])
     now = datetime.utcnow()
     guild = bot.get_guild(GUILD_IDS[1])
-
     if not guild:
         return
-
     for i in range(1, len(rows)):
         row = rows[i] + [""] * 30
         proyecto = row[1]
         capitulo = row[2]
-
         for proceso, cfg in PROCESS_CONFIG.items():
             status = row[cfg["status_col"]]
             timestamp = row[cfg["time_col"]]
-
             if status != "ASIGNADO" or not timestamp:
                 continue
-
             try:
                 asignado_time = datetime.fromisoformat(timestamp)
             except:
                 continue
-
             horas = (now - asignado_time).total_seconds() / 3600
             if horas < cfg["interval_hours"]:
                 continue
-
             user_cell = row[cfg["user_col"]]
             msg_id = row[cfg["msg_col"]]
             asign_channel_id = row[cfg["channel_col"]]
-
             mention = user_cell
             if "/" in user_cell:
                 try:
                     mention = f"<@{user_cell.split('/')[-1].strip()}>"
                 except:
                     pass
-
             await enviar_recordatorio(
                 guild=guild,
                 proyecto=proyecto,
@@ -500,55 +441,39 @@ async def revisar_asignaciones_atrasadas():
                 proceso=proceso,
                 emoji=cfg["emoji"]
             )
-            
 @tasks.loop(minutes=10)
 async def calendario_window():
     global ultimo_calendario_run
-
     # 🔥 Ajuste manual de zona horaria
     now = datetime.now() - timedelta(hours=8)
-
     today_key = now.date()
-
     # 🔒 evita doble ejecución
     if ultimo_calendario_run == today_key:
         return
-
     # 🎯 ventana: entre 07:00 y 08:00
     if not (7 <= now.hour < 8):
         return
-
     print("🌸 Ejecutando calendario (ventana 7-8am)")
     await revisar_calendario()
-
     ultimo_calendario_run = today_key
-        
 def tiene_rol(ctx, claves_roles):
     user_roles = [role.id for role in ctx.author.roles]
     roles_validos = []
-
     for clave in claves_roles:
         roles_validos.extend(ROLES_INDIVIDUALES.get(clave, []))
-
     return any(role_id in user_roles for role_id in roles_validos)
-    
 async def tiene_asignacion_larga_activa(user_id):
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{SHEET_NAME3}!E:G"
     ).execute()
-
     rows = data.get("values", [])
-
     user_id = str(user_id)
-
     for i in range(1, len(rows)):
         row = rows[i] + [""] * 3
-
         trad = str(row[0])
         clean = str(row[1])
         type_ = str(row[2])
-
         # Buscar coincidencia exacta
         if f"ASIGNADO LARGO | {user_id}" in trad:
             return "TRADUCCIÓN"
@@ -557,7 +482,6 @@ async def tiene_asignacion_larga_activa(user_id):
         if f"ASIGNADO LARGO | {user_id}" in type_:
             return "EDICIÓN"
     return None
-
 async def verificar_bloqueo_largo(ctx):
     proceso = await tiene_asignacion_larga_activa(ctx.author.id)
     if proceso:
@@ -567,7 +491,6 @@ async def verificar_bloqueo_largo(ctx):
         )
         return True
     return False
-
 async def obtener_filas_batch(hoja, fila, col_letra):
     # Leer la celda base
     data = sheet.values().get(
@@ -582,66 +505,50 @@ async def obtener_filas_batch(hoja, fila, col_letra):
         batch_id = valor.split("|")[1].strip()
     except:
         return [(fila, col_letra)]
-
     # Leer toda la hoja
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{hoja}!E:G"
     ).execute()
-
     rows = data.get("values", [])
-
     filas_encontradas = []
-
     for i in range(1, len(rows)):
         row = rows[i] + [""] * 3
-
         if f"ASIGNADO LARGO | {batch_id}" in str(row[0]):
             filas_encontradas.append((i+1, "E"))
-
         if f"ASIGNADO LARGO | {batch_id}" in str(row[1]):
             filas_encontradas.append((i+1, "F"))
-
         if f"ASIGNADO LARGO | {batch_id}" in str(row[2]):
             filas_encontradas.append((i+1, "G"))
     return filas_encontradas if filas_encontradas else [(fila, col_letra)]    
-
 def parse_cap(x):
     try:
         x = str(x).replace("'", "").replace(",", ".").strip()
         return float(x)
     except:
         return None
-
 # Funciones de Saku_Drive 
 def authenticate():
     SCOPES = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-
     token_info = os.getenv("GOOGLE_TOKEN_DRIVE_JSON")
     if not token_info:
         raise Exception("GOOGLE_TOKEN_DRIVE_JSON no encontrado en env")
-
     creds = Credentials.from_authorized_user_info(
         json.loads(token_info),
         SCOPES
     )
-
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-
     return creds
-
 def extract_drive_links(text):
     return re.findall(r"https?://drive\.google\.com/(?:file/d|drive/(?:u/\d+/)?folders)/[a-zA-Z0-9_-]+", text)
-
 def extract_id(link):
     clean_link = re.sub(r'/u/\d+/', '/', link)
     match = re.search(r"/(?:d|folders)/([a-zA-Z0-9_-]+)", clean_link)
     return match.group(1) if match else None
-
 def folder_has_files(service, folder_id):
     try:
         results = service.files().list(
@@ -651,7 +558,6 @@ def folder_has_files(service, folder_id):
         return len(results.get("files", [])) > 0
     except Exception:
         return False
-
 def traverse_folder(service, folder_id):
     try:
         items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
@@ -664,7 +570,6 @@ def traverse_folder(service, folder_id):
         return sorted(caps)
     except Exception:
         return None
-
 def traverse_trad(service, folder_id):
     try:
         items = service.files().list(q=f"'{folder_id}' in parents and trashed=false",
@@ -677,33 +582,25 @@ def traverse_trad(service, folder_id):
         return sorted(caps)
     except Exception:
         return None
-
 def traverse_cover(service, folder_id):
     try:
         items = service.files().list(
             q=f"'{folder_id}' in parents and trashed=false",
             fields="files(id,name,mimeType)"
         ).execute().get("files", [])
-
         caps = []
-
         for item in items:
             # Ignorar subcarpetas
             if item["mimeType"] == "application/vnd.google-apps.folder":
                 continue
-
             name = item["name"].strip().lower()
-
             # Regex estricta: solo número + extensión imagen
             match = re.match(r"^(\d+)\.(png|jpg|jpeg|webp)$", name)
             if match:
                 caps.append(int(match.group(1)))
-
         return sorted(caps)
-
     except Exception:
         return []
-
 def join_ranges(numbers):
     if not numbers: return "0"
     numbers = sorted(numbers)
@@ -716,7 +613,6 @@ def join_ranges(numbers):
             start = prev = n
     ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
     return " / ".join(ranges)
-    
 # Funciones de Saku_RAW 
 def evento_a(soup):
     contenedores = soup.select('astro-slot > div[data-hk]')
@@ -726,46 +622,37 @@ def evento_a(soup):
         if enlace:
             return enlace.get_text(strip=True)
     return None
-
 def evento_b(soup):
     b_tag = soup.select_one("div.main b")
     return b_tag.get_text(strip=True) if b_tag else None
-
 def evento_c(soup):
     for li in soup.select('li.flex.justify-between'):
         spans = li.find_all('span')
         if len(spans) == 2:
             return spans[0].get_text(strip=True)
     return None
-
 def evento_d(soup):
     contenedor = soup.select_one('div.all_data_list ul.fed-part-rows li a')
     return contenedor.get_text(strip=True) if contenedor else None
-
 def evento_e(html):
     match = re.search(r'<span class="epcur epcurlast">\s*(.*?)\s*</span>', html, re.IGNORECASE)
     return match.group(1).strip() if match else None
-
 def evento_f(soup):
     spans = soup.select('div.title-item span.text')
     texto_libres = [s.get_text(strip=True) for s in spans if "text-locked" not in s.get("class", [])]
     return texto_libres[-1] if texto_libres else None
-
 def evento_g(soup):
     primer_li = soup.select_one("li.wp-manga-chapter a")
     if primer_li:
         texto = primer_li.get_text(strip=True)
         return texto if "Chapter" in texto else None
     return None
-
 def evento_h(html):
     match = re.search(r'title="(Ch\.\s*\d+)"', html)
     return match.group(1) if match else None
-
 def evento_i(html):
     match = re.search(r'<div class="latest-chapters">.*?<a[^>]*>\s*<strong[^>]*>(.*?)</strong>', html, re.DOTALL)
     return match.group(1).strip() if match else None
-
 def evento_j(soup):
     bloques = soup.select('div.group.flex.flex-col')
     for bloque in bloques:
@@ -776,17 +663,14 @@ def evento_j(soup):
             extra = span.get_text(strip=True) if span else ""
             return f"{texto} {extra}".strip()
     return None
-
 def detectar_evento(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=20)
         if r.status_code != 200:
             return None, "Error HTTP"
-
         html = r.text
         soup = BeautifulSoup(html, "html.parser")
-
         for letra, func in [
             ("A", lambda: evento_a(soup)),
             ("B", lambda: evento_b(soup)),
@@ -802,13 +686,10 @@ def detectar_evento(url):
             resultado = func()
             if resultado:
                 return resultado, letra
-
         return None, "No detectado"
-
     except Exception as e:
         return None, str(e)
     pass
-
 # Funciones de Saku_Search
 MESES = {
     "enero": "January", "febrero": "February", "marzo": "March", "abril": "April",
@@ -816,7 +697,6 @@ MESES = {
     "septiembre": "September", "octubre": "October", "noviembre": "November",
     "diciembre": "December"
 }
-
 # Lista de dominios Catharsis válidos (fácil de actualizar)
 CATH_DOMAINS = [
     "catharsisworld.dig-it.info",
@@ -831,19 +711,16 @@ LEC_DOMAINS = [
     "lectorjpg.com",
     "visorjpg.lat"
 ]
-
 def leer_csv_catharsis(ruta_csv):
     """
     Lee el reporte CSV de Catharsis y devuelve:
     {
         "CATH_ID": "capítulos"
     }
-
     El módulo csv maneja correctamente los títulos que contienen
     saltos de línea dentro de comillas.
     """
     datos = {}
-
     try:
         with open(ruta_csv, "r", encoding="utf-8-sig", newline="") as archivo:
             lector = csv.DictReader(archivo, delimiter=";")
@@ -859,29 +736,21 @@ def leer_csv_catharsis(ruta_csv):
     except Exception as e:
         print(f"❌ Error leyendo CSV de Catharsis: {e}")
         raise
-
 def url_with_domain(url: str, new_domain: str) -> str:
     """Reemplaza el dominio de un URL manteniendo esquema y path."""
     p = urlparse(url)
     return urlunparse((p.scheme, new_domain, p.path, "", "", ""))
-
 def check_alive(url: str, timeout=10):
     try:
         r = requests.get(url, timeout=timeout)
-
         if r.status_code != 200:
             return False
-
         soup = BeautifulSoup(r.text, "html.parser")
-
         # comprobar que existan capítulos reales
         blocks = soup.select("a.group.relative.flex")
-
         return len(blocks) > 0
-
     except:
         return False
-
 def evento_eter(url, preestreno=False, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -890,51 +759,34 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": "https://eternalmangas.org/"
     }
-
     for intento in range(1, retries + 1):
         try:
             response = requests.get(url, headers=headers, timeout=20)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
-
             caps = "N/A"
             actual = "N/A"
-
-            # =====================================================
             # MÉTODO ANTIGUO
-            # =====================================================
             h1_blocks = soup.find_all("h1", class_="font-semibold text-medium")
-
             if h1_blocks:
                 for h1 in h1_blocks:
                     texto = h1.get_text(strip=True)
                     div = h1.find_next_sibling("div")
-
                     if div and div.p:
                         valor = div.p.get_text(strip=True)
-
                         if "Capítulos" in texto:
                             caps = valor
-
                         elif "Última actualización" in texto:
                             actual = valor
-
-            # =====================================================
             # MÉTODO NUEVO (Beta)
-            # =====================================================
             if caps == "N/A" and actual == "N/A":
                 for li in soup.find_all("li"):
                     texto = li.get_text(" ", strip=True)
-
                     if texto.startswith("Capítulos:"):
                         caps = texto.replace("Capítulos:", "").strip()
-
                     elif texto.startswith("Última actualización:"):
                         actual = texto.replace("Última actualización:", "").strip()
-
-            # =====================================================
             # Ajuste para preestrenos
-            # =====================================================
             if preestreno:
                 try:
                     caps_num = int(caps)
@@ -943,39 +795,30 @@ def evento_eter(url, preestreno=False, retries=3, delay=5):
                     caps = str(caps_num)
                 except:
                     pass
-
             actual = fecha_a_dias_atras(actual)
-
             return f"ETERNAL\n> Capítulo: {caps}\n> Actualizado: {actual}"
-
         except requests.exceptions.HTTPError as e:
             if response.status_code in [520, 503, 429]:
                 print(f"⚠ Intento {intento}/{retries}: {response.status_code} recibido, reintentando en {delay}s...")
                 time.sleep(delay)
                 continue
-
             return f"❌ Error HTTP: {e}"
-
         except Exception as e:
             print(f"⚠ Intento {intento}/{retries} falló: {e}")
             time.sleep(delay)
             continue
     return "❌ No se pudo acceder a EternalMangas después de varios intentos."
-
 def evento_lec(url, preestreno=False, retries=3, delay=5):
     # ---------- 1) Intento: usar el link tal como viene ----------
     if not check_alive(url):
-
         # ---------- 2) Intentar con todos los dominios ----------
         try:
             dominio_actual = urlparse(url).netloc
         except:
             dominio_actual = ""
-
         for dom in LEC_DOMAINS:
             if dom == dominio_actual:
                 continue
-
             alt_url = url_with_domain(url, dom)
             if check_alive(alt_url):
                 url = alt_url
@@ -983,13 +826,11 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
         else:
             print("❌ Ningún dominio LECTOR respondió.")
             return "❌ Lector parece estar caído en todos los dominios."
-
     # ---------- 3) Dominio final ----------
     try:
         dominio = urlparse(url).netloc
     except:
         dominio = "lectorjpg.com"
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -997,22 +838,18 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": f"https://{dominio}/"
     }
-
     for intento in range(1, retries + 1):
         try:
             response = requests.get(url, headers=headers, timeout=20)
             response.raise_for_status()
             response.encoding = 'utf-8'
             soup = BeautifulSoup(response.text, "html.parser")
-
             blocks = soup.select("a.group.relative.flex")
             if not blocks:
                 return "❌ No se encontró ningún capítulo."
-
             candidatos = [blocks[0]]
             if len(blocks) > 1:
                 candidatos.append(blocks[-1])
-
             def extraer_cap_num(block):
                 cap_span = block.select_one("span.truncate.text-sm")
                 if not cap_span:
@@ -1020,14 +857,11 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
                 cap_text = cap_span.get_text(strip=True)
                 m = re.search(r'capitulo\s*(\d+)', cap_text, re.I)
                 return int(m.group(1)) if m else -1
-
             block = max(candidatos, key=extraer_cap_num)
-
             cap_span = block.select_one("span.truncate.text-sm")
             cap_text = cap_span.get_text(strip=True) if cap_span else "Desconocido"
             cap_match = re.search(r'capitulo\s*(\d+)', cap_text, re.I)
             cap = cap_match.group(1) if cap_match else cap_text
-
             if preestreno:
                 try:
                     cap_num = int(cap)
@@ -1036,15 +870,11 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
                     cap = str(cap_num)
                 except:
                     pass
-
             fecha_span = block.select_one("span[class*='text-white/50'], span[class*='text-white/60']")
             fecha_text = fecha_span.get_text(strip=True) if fecha_span else "Desconocido"
-
             fecha_text = fecha_text.encode("latin1", "ignore").decode("utf-8", "ignore")
             fecha_text = fecha_a_dias_atras(fecha_text)
-
             return f"LECTORJPG\n> Capítulo: {cap}\n> Actualizado: {fecha_text}"
-
         except requests.exceptions.HTTPError as e:
             if response.status_code in [503, 429]:
                 print(f"⚠ Intento {intento}/{retries}: {response.status_code}, reintentando...")
@@ -1055,7 +885,6 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
             print(f"⚠ Intento {intento}/{retries} falló: {e}")
             time.sleep(delay)
             continue
-
     return "❌ No se pudo acceder a Lector después de varios intentos."
 def evento_cath(url, preestreno=False, retries=3, delay=5):
     """
@@ -1077,48 +906,32 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
     """
     if not url:
         return "❌ No se proporcionó un enlace de Catharsis."
-
     # 🧠 Convertir enlace viejo → enlace nuevo
     if LOBOTOMIA == 1:
         url = lobotomizar_cath_link(url)
-
     print(f"🔎 Catharsis → consultando: {url}")
-
-    # ==========================================================
     # 1. EXTRAER SLUG
-    # ==========================================================
-
     try:
         parsed = urlparse(url)
         path = parsed.path.strip("/")
-
         # Esperamos:
         # /manga/slug
         if not path.startswith("manga/"):
             return "❌ El enlace de Catharsis no tiene un formato válido."
-
         slug = path[len("manga/"):].strip("/")
-
         if not slug:
             return "❌ No se pudo obtener el slug del manga."
-
     except Exception as e:
         print(
             f"⚠️ Catharsis → "
             f"error obteniendo slug: {e}"
         )
         return "❌ No se pudo interpretar el enlace de Catharsis."
-
-    # ==========================================================
     # 2. CONSTRUIR API
-    # ==========================================================
-
     api_url = (
         f"https://newcatharsis.dig-it.info/api/mangas/{slug}"
     )
-
     print(f"📡 Catharsis → API: {api_url}")
-
     headers = {
         "Accept": "application/json",
         "User-Agent": (
@@ -1130,113 +943,77 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         "x-fk-sistema": "3",
         "x-api-key": CATH_API_KEY,
     }
-
-    # ==========================================================
     # 3. CONSULTAR API
-    # ==========================================================
-
     for intento in range(1, retries + 1):
-
         try:
-
             print(
                 f"🔎 Catharsis → intento "
                 f"{intento}/{retries}"
             )
-
             response = requests.get(
                 api_url,
                 headers=headers,
                 timeout=20
             )
-
             print(
                 f"📡 Catharsis → HTTP "
                 f"{response.status_code}"
             )
-
             response.raise_for_status()
-
             data = response.json()
-
-            # ==================================================
             # 4. OBTENER DATOS
-            # ==================================================
-
             total_capitulos = data.get("n_capitulos")
             capitulos = data.get("capitulos") or []
-
             if total_capitulos is None:
                 print(
                     "⚠️ Catharsis → "
                     "la API no devolvió n_capitulos."
                 )
-
                 return (
                     "❌ Catharsis respondió, "
                     "pero no devolvió el total de capítulos."
                 )
-
             if not capitulos:
                 print(
                     "⚠️ Catharsis → "
                     "la API no devolvió capítulos."
                 )
-
                 return (
                     "❌ Catharsis respondió, "
                     "pero no devolvió la lista de capítulos."
                 )
-
-            # ==================================================
             # 5. BUSCAR EL CAPÍTULO MÁS ALTO
-            # ==================================================
-
             def numero_capitulo(cap):
-
                 try:
                     return float(
                         str(
                             cap.get("numero", 0)
                         ).replace(",", ".")
                     )
-
                 except Exception:
                     return 0
-
             ultimo_capitulo = max(
                 capitulos,
                 key=numero_capitulo
             )
-
             numero = ultimo_capitulo.get("numero")
             fecha_raw = ultimo_capitulo.get("date_created")
-
             print(
                 f"📚 Catharsis → "
                 f"capítulo encontrado: {numero}"
             )
-
             print(
                 f"📅 Catharsis → "
                 f"fecha encontrada: {fecha_raw}"
             )
-
-            # ==================================================
             # 6. PREESTRENO
-            # ==================================================
-
             if preestreno:
-
                 try:
-
                     numero_float = float(
                         str(numero).replace(",", ".")
                     )
-
                     if numero_float > 0:
                         numero_float -= 1
-
                     if numero_float.is_integer():
                         numero = str(
                             int(numero_float)
@@ -1245,178 +1022,88 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
                         numero = str(
                             numero_float
                         )
-
                     print(
                         f"🧪 Catharsis → "
                         f"preestreno activado: {numero}"
                     )
-
                 except Exception as e:
-
                     print(
                         f"⚠️ Catharsis → "
                         f"no se pudo aplicar preestreno: {e}"
                     )
-
-            # ==================================================
             # 7. CONVERTIR FECHA → DÍAS ATRÁS
-            # ==================================================
-
             fecha = "N/D"
-
             if fecha_raw:
-
                 try:
-
                     fecha_obj = datetime.fromisoformat(
                         fecha_raw.replace("Z", "+00:00")
                     )
-
                     # --------------------------------------------------
                     # Convertimos la fecha ISO de la API al mismo
                     # formato que entiende fecha_a_dias_atras()
                     # --------------------------------------------------
-
                     fecha_formateada = fecha_obj.strftime(
                         "%d/%m/%Y"
                     )
-
                     fecha = fecha_a_dias_atras(
                         fecha_formateada
                     )
-
                     print(
                         f"📅 Catharsis → "
                         f"fecha normalizada: {fecha_formateada}"
                     )
-
                     print(
                         f"🕐 Catharsis → "
                         f"antigüedad: {fecha}"
                     )
-
                 except Exception as e:
-
                     print(
                         f"⚠️ Catharsis → "
                         f"error convirtiendo fecha: {e}"
                     )
-
                     fecha = "N/D"
-
-            # ==================================================
             # 8. RESULTADO FINAL
-            # ==================================================
-
             print(
                 f"✅ Catharsis → "
                 f"Capítulo: {numero} | "
                 f"Fecha: {fecha}"
             )
-
             return (
                 f"CATHARSIS\n"
                 f"> Capítulo: {numero}\n"
                 f"> Actualizado: {fecha}"
             )
-
-        # ======================================================
         # ERROR HTTP
-        # ======================================================
-
         except requests.RequestException as e:
-
             print(
                 f"⚠️ Catharsis → "
                 f"error HTTP "
                 f"(intento {intento}/{retries}): {e}"
             )
-
-        # ======================================================
         # JSON INVÁLIDO
-        # ======================================================
-
         except ValueError as e:
-
             print(
                 f"⚠️ Catharsis → "
                 f"respuesta JSON inválida: {e}"
             )
-
             return (
                 "❌ Catharsis respondió, "
                 "pero la respuesta no es un JSON válido."
             )
-
-        # ======================================================
         # ERROR INESPERADO
-        # ======================================================
-
         except Exception as e:
-
             print(
                 f"⚠️ Catharsis → "
                 f"error inesperado "
                 f"(intento {intento}/{retries}): {e}"
             )
-
-        # ======================================================
         # REINTENTO
-        # ======================================================
-
         if intento < retries:
             time.sleep(delay)
-
     return (
         "❌ No se pudo acceder a Catharsis "
         "después de varios intentos."
     )
-async def evento_cath_async(url, preestreno=False):
-    # la misma lógica de extracción de slug/lobotomía que ya tienes
-    if not url:
-        return "❌ No se proporcionó un enlace de Catharsis."
-    if LOBOTOMIA == 1:
-        url = lobotomizar_cath_link(url)
-    try:
-        parsed = urlparse(url)
-        path = parsed.path.strip("/")
-        if not path.startswith("manga/"):
-            return "❌ El enlace de Catharsis no tiene un formato válido."
-        slug = path[len("manga/"):].strip("/")
-        if not slug:
-            return "❌ No se pudo obtener el slug del manga."
-    except Exception:
-        return "❌ No se pudo interpretar el enlace de Catharsis."
-
-    is_new, payload = await fetcher.check_and_notify(slug)
-    if payload is None:
-        return "❌ No se logró obtener la respuesta de Catharsis."
-    api = payload["api"]
-    latest = payload["latest"]
-    total_capitulos = api.get("n_capitulos")
-    capitulos = api.get("capitulos") or []
-    if total_capitulos is None or not capitulos:
-        return "❌ Catharsis respondió, pero no devolvió los datos esperados."
-    numero = latest.get("numero")
-    fecha_raw = latest.get("fecha_publicacion") or latest.get("date_created")
-    fecha = "N/D"
-    if fecha_raw:
-        try:
-            fecha_obj = datetime.fromisoformat(fecha_raw.replace("Z", "+00:00"))
-            fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
-            fecha = fecha_a_dias_atras(fecha_formateada)
-        except Exception:
-            fecha = "N/D"
-    # aplicar preestreno si se pide (reusa tu lógica)
-    if preestreno:
-        try:
-            nf = float(str(numero).replace(",", "."))
-            if nf > 0:
-                nf -= 1
-            numero = str(int(nf)) if nf.is_integer() else str(nf)
-        except Exception:
-            pass
-    return f"CATHARSIS\n> Capítulo: {numero}\n> Actualizado: {fecha}"
 def evento_capi(url, retries=3, delay=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1425,11 +1112,9 @@ def evento_capi(url, retries=3, delay=5):
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": "https://capibaratraductor.com/"
     }
-
     for intento in range(1, retries + 1):
         try:
             session = requests.Session()
-
             # Cookie de verificación NSFW
             session.cookies.set(
                 "nsfw",
@@ -1437,44 +1122,34 @@ def evento_capi(url, retries=3, delay=5):
                 domain="capibaratraductor.com",
                 path="/"
             )
-
             response = session.get(
                 url,
                 headers=headers,
                 timeout=20
             )
-
             response.raise_for_status()
             response.encoding = "utf-8"
-
             soup = BeautifulSoup(response.text, "html.parser")
             # BUSCAR TODOS LOS BLOQUES DE CAPÍTULOS
             bloques = soup.select("a[href*='/chapters/']")
-
             if not bloques:
                 print("⚠️ CAPIBARA: No se encontraron bloques de capítulos.")
                 return "❌ No se encontraron capítulos en CAPIBARA."
             # BUSCAR EL CAPÍTULO MÁS ALTO
             mejor_bloque = None
             mejor_capitulo = -1
-
             for bloque in bloques:
-
                 texto_bloque = bloque.get_text(" ", strip=True)
-
                 match = re.search(
                     r'cap[ií]tulo\s*(\d+)',
                     texto_bloque,
                     re.I
                 )
-
                 if match:
                     cap_num = int(match.group(1))
-
                     if cap_num > mejor_capitulo:
                         mejor_capitulo = cap_num
                         mejor_bloque = bloque
-
             if not mejor_bloque:
                 print("⚠️ CAPIBARA: Se encontraron bloques, pero no se pudo identificar ningún capítulo.")
                 return "❌ No se pudo identificar el capítulo en CAPIBARA."
@@ -1489,7 +1164,6 @@ def evento_capi(url, retries=3, delay=5):
                 texto_bloque,
                 re.I
             )
-
             if cap_match:
                 cap = cap_match.group(1)
             else:
@@ -1501,22 +1175,18 @@ def evento_capi(url, retries=3, delay=5):
                 texto_bloque,
                 re.I
             )
-
             if fecha_match:
                 fecha_text = fecha_match.group(1).strip()
             else:
                 # Fallback: buscar directamente el span que contiene "hace"
                 fecha_text = "Desconocido"
-
                 for span in mejor_bloque.find_all("span"):
                     texto_span = span.get_text(" ", strip=True)
-
                     if re.search(r'\bhace\s+', texto_span, re.I):
                         fecha_text = texto_span.strip()
                         break
             # NORMALIZAR FECHA
             fecha_text = fecha_text.replace("hace ", "").strip()
-
             fecha_text = (
                 fecha_text
                 .replace("hours", "horas")
@@ -1528,16 +1198,13 @@ def evento_capi(url, retries=3, delay=5):
                 .replace("months", "meses")
                 .replace("month", "mes")
             )
-
             fecha_text = fecha_a_dias_atras(fecha_text)
             return (
                 f"CAPIBARA\n"
                 f"> Capítulo: {cap}\n"
                 f"> Actualizado: {fecha_text}"
             )
-
         except requests.exceptions.HTTPError as e:
-
             if response.status_code in [503, 429, 520]:
                 print(
                     f"⚠️ CAPIBARA intento "
@@ -1545,39 +1212,29 @@ def evento_capi(url, retries=3, delay=5):
                     f"{response.status_code} recibido, "
                     f"reintentando en {delay}s..."
                 )
-
                 time.sleep(delay)
                 continue
-
             return f"❌ Error HTTP: {e}"
-
         except Exception as e:
-
             print(
                 f"⚠️ CAPIBARA intento "
                 f"{intento}/{retries} falló: {e}"
             )
-
             time.sleep(delay)
             continue
-
     return "❌ No se pudo acceder a CAPIBARA después de varios intentos."
-    
 def fecha_a_dias_atras(fecha_str):
     fecha_str = fecha_str.strip().lower()
-
     if fecha_str in ["ayer"]:
         return "1 día atrás"
     if fecha_str in ["anteayer"]:
         return "2 días atrás"
-
     try:
         fecha_dt = datetime.strptime(fecha_str, "%d/%m/%Y")
         delta = datetime.today() - fecha_dt
         return f"{delta.days} días atrás"
     except:
         pass
-
     try:
         for es, en in MESES.items():
             if fecha_str.startswith(es):
@@ -1588,33 +1245,26 @@ def fecha_a_dias_atras(fecha_str):
         return f"{delta.days} días atrás"
     except:
         pass
-
     horas_match = re.search(r'(\d+)\s*hora', fecha_str)
     dias_match = re.search(r'(\d+)\s*día', fecha_str)
     meses_match = re.search(r'(\d+)\s*mes', fecha_str)
-
     if horas_match:
         horas = int(horas_match.group(1))
         return "0 días atrás" if horas < 24 else f"{horas//24} días atrás"
-
     if dias_match:
         dias = int(dias_match.group(1))
         return f"{dias} días atrás"
-
     if meses_match:
         meses = int(meses_match.group(1))
         dias = meses * 30
         return f"{dias} días atrás"
-
     return fecha_str
     pass
-
 def obtener_color(dias_str, sitio):
     try:
         dias = int(re.search(r'(\d+)', dias_str).group(1))
     except:
         dias = 0
-
     if sitio == "CATHARSIS":
         if dias <= 7:
             return 0x2ECC71  # Verde
@@ -1739,9 +1389,9 @@ async def crear_topic_telegram(nombre_canal):
             f"'{titulo_topic}': {e}"
         )
         raise
-# ==========================================================
+# 
 # COVER — CREAR MENSAJE + HILO PARA EL PROYECTO
-# ==========================================================
+# 
 async def crear_hilo_cover(guild, canal_proyecto):
     """
     Busca el canal #cover, publica una mención del canal
@@ -1801,9 +1451,9 @@ async def crear_hilo_cover(guild, canal_proyecto):
             f"#{canal_proyecto.name}: {e}"
         )
         raise
-# ==========================================================
+# 
 # DRIVE — ENCONTRAR CARPETA TYPE DESDE LOS PINS
-# ==========================================================
+# 
 async def encontrar_drive_type(channel):
     """
     Lee los mensajes fijados del canal, encuentra un enlace
@@ -1917,29 +1567,22 @@ async def buscar_cover_global(
     numeros: List[int]
 ) -> Optional[str]:
     covers_channel = guild.get_channel(PROJECT_COVERS_CHANNEL_ID)
-
     if covers_channel is None:
         return None
     codigo = obtener_codigo_proyecto(project_channel.name)
-
     if codigo is None:
         return None
-
     threads = list(covers_channel.threads)
     async for thread in covers_channel.archived_threads(limit=None):
         threads.append(thread)
     hilo = None
-
     for thread in threads:
-
         if thread.name.startswith(f"{codigo}-"):
             hilo = thread
             break
-
     if hilo is None:
         print(f"❌ No existe hilo para el proyecto {codigo}.")
         return None
-
     encontrados = []
     async for msg in hilo.history(limit=None, oldest_first=True):
         contenido = msg.content or ""
@@ -2102,7 +1745,6 @@ def generate_update_banner(portada_path, cap_text, caps_word, palabra_banner, co
             font_title,
             blur=6
         )
-
         draw_glow_text(
             base,
             (caps_x, 300),
@@ -2121,12 +1763,10 @@ def generate_update_banner(portada_path, cap_text, caps_word, palabra_banner, co
 # --- Constantes / variables fijas ---
 LINK_TELE = os.getenv("LINK_TELEGRAM", "https://t.me/+voe0LK-TSzA1NjUx")
 LINK_DIS  = os.getenv("LINK_DISCORD", "https://discord.gg/NRdjpBFy9E")
-
 LINK_GLOBAL_ETER = "https://eternalmangas.org/"
 LINK_GLOBAL_CATH = "https://catharsisworld.com/"
 LINK_GLOBAL_LEC  = "https://lectorjpg.com/"
 LINK_GLOBAL_COL  = "https://capibaratraductor.com/"
-
 # --- Helpers para Google Sheets ---
 def normalize_channel_name(ch: str) -> str:
     """
@@ -2146,7 +1786,6 @@ def normalize_channel_name(ch: str) -> str:
     if ch.startswith("#"):
         return ch[1:].strip().lower()
     return ch.lower()
-
 def get_sheet_rows() -> List[List[str]]:
     """
     Trae filas desde la hoja VARIABLES.
@@ -2162,7 +1801,6 @@ def get_sheet_rows() -> List[List[str]]:
         # Este es un punto crítico para depurar si las credenciales no están ok
         print(f"⚠️ Error leyendo Google Sheet: {e}")
         return []
-
 def find_project_row_by_channel(channel_lookup: str) -> Optional[Dict[str, str]]:
     """
     Busca la fila cuyo valor en la columna B (index 1) coincida con channel_lookup.
@@ -2184,12 +1822,10 @@ def find_project_row_by_channel(channel_lookup: str) -> Optional[Dict[str, str]]
             }
     # no encontrado
     return None
-
 # --- Helpers para leer pinned messages del canal ---
 URL_REGEX = re.compile(r"https?://[^\s>]+")
 def extract_urls_from_text(text: str) -> List[str]:
     return URL_REGEX.findall(text)
-
 async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[str]]:
     """
     Lee los mensajes fijados (pins) de un canal y busca links relacionados con:
@@ -2214,11 +1850,9 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
     except Exception as e:
 #        print(f"⚠️ No pude leer pins del canal {channel}: {e}")
         return found
-
     for msg in pins:
         text = (msg.content or "") + "\n" + " ".join([att.url for att in msg.attachments]) if msg.attachments else (msg.content or "")
         urls = extract_urls_from_text(text)
-
         # si hay URLs, buscar por dominio
         for u in urls:
             lu = u.lower()
@@ -2230,7 +1864,6 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                 found["LINK_LEC"] = u
             if "capibara" in lu and not found["LINK_COL"]:
                 found["LINK_COL"] = u
-
     # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
         # Buscamos líneas con prefijos conocidos
         lines = (msg.content or "").splitlines()
@@ -2245,7 +1878,6 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                         found["PRE_ETER"] = True
                     elif valor and not found["LINK_ETER"]:
                         found["LINK_ETER"] = valor
-
             if ln_stripped.lower().startswith("catharsis"):
                 parts = ln_stripped.split(":", 1)
                 if len(parts) > 1:
@@ -2254,7 +1886,6 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                         found["PRE_CATH"] = True
                     elif valor and not found["LINK_CATH"]:
                         found["LINK_CATH"] = valor
-
             if ln_stripped.lower().startswith("lector"):
                 parts = ln_stripped.split(":", 1)
                 if len(parts) > 1:
@@ -2263,7 +1894,6 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                         found["PRE_LEC"] = True
                     elif valor and not found["LINK_LEC"]:
                         found["LINK_LEC"] = valor
-
             if ln_stripped.lower().startswith("color"):
                 parts = ln_stripped.split(":", 1)
                 if len(parts) > 1:
@@ -2345,35 +1975,28 @@ async def resolve_cath_domain(original_url: str) -> str:
 def normalize_cath_link(url_or_text: str) -> str:
     if not url_or_text:
         return url_or_text
-
     if LOBOTOMIA == 1:
         return lobotomizar_cath_link(url_or_text)
     return url_or_text
 async def resolve_lec_domain(original_url: str) -> str:
     if not original_url:
         return None
-
     # 1 — Probar el link tal cual
     if check_alive(original_url):
         return original_url
-
     # 2 — Intentar con dominios alternativos
     try:
         parsed = urlparse(original_url)
         original_domain = parsed.netloc.lower()
     except:
         return original_url
-
     for dom in LEC_DOMAINS:
         if dom == original_domain:
             continue
-
         test_url = url_with_domain(original_url, dom)
         if check_alive(test_url):
             return test_url
-
     return original_url
-    
 # --- Construcción del diccionario final de variables ---
 async def build_variables_for_channel(ctx: commands.Context, channel_input: str) -> Dict[str, Any]:
     """
@@ -2397,24 +2020,19 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
                     break
             if target_channel:
                 break
-
     if not target_channel:
         raise ValueError("CANAL_NO_ENCONTRADO")
-
     # 3) Leer sheet usando el nombre del canal tal como aparece en la hoja (col B)
     sheet_lookup = target_channel.name.lower()
     sheet_row = find_project_row_by_channel(sheet_lookup)
     if not sheet_row:
         # intentar con "#name"
         sheet_row = find_project_row_by_channel(f"#{sheet_lookup}")
-
     # 4) Leer pins del canal
     pin_vars = await read_channel_pins(target_channel)
-
     # Normalizar cath link si existe
     if pin_vars.get("LINK_CATH"):
         pin_vars["LINK_CATH"] = normalize_cath_link(pin_vars["LINK_CATH"])
-
     # 5) Merge final
     final = {
         # fijas
@@ -2439,7 +2057,6 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
         "CHANNEL_NAME": target_channel.name
     }
     return final
-
 # --- Render de plantilla_fb ---
 def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, use_links: bool) -> str:
     def safe(k):
@@ -2447,9 +2064,7 @@ def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
         return v
-
     enlaces = []
-
     if use_links:
         if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
         if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
@@ -2460,14 +2075,11 @@ def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str
         if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
         if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
         if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
-
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
-
     titulo  = safe("TITULO")  or "[SIN_TITULO]"
     sinop   = safe("SINOPSIS") or "[SIN_SINOPSIS]"
     generos = safe("GENEROS") or "[SIN_GENEROS]"
     tipo    = safe("TIPO")    or "[SIN_TIPO]"
-
     return (
 f"🌹⋆｡°✩ ˚｡⋆ 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 ⋆｡°✩ ˚｡⋆🌹\n"
 f"༺📘༻ **{titulo}** ༺📘༻\n"
@@ -2488,7 +2100,6 @@ f"➤ {safe('LINK_DIS')}\n"
 f"✦───༺♡༻───✦\n\n"
 f"#CapítuloNuevo #Manhwa #BreakScan"
     )
-
 # --- Render de plantilla_dis ---
 def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, use_links: bool) -> str:
     def safe(k):
@@ -2497,7 +2108,6 @@ def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
             return None
         return v
     enlaces = []
-
     if use_links:
         if safe("LINK_CATH"):  enlaces.append(f"✦ {safe('LINK_CATH')}")
         if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
@@ -2508,11 +2118,8 @@ def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
         if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
         if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
         if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
-
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
-
     titulo = safe("TITULO") or "[SIN_TITULO]"
-
     return (
 f"# @everyone,\n"
 f"🌹 𝓐𝓬𝓽𝓾𝓪𝓵𝓲𝔃𝓪𝓬𝓲𝓸𝓷 🌹\n"
@@ -2522,16 +2129,12 @@ f"🌐 Lectura disponible en:\n"
 f"{enlaces_texto}\n"
 f"# Muchas gracias por su apoyo 💖\n"
     )
-
 # --- Render de plantilla_tel ---
 def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: str, choice: str, use_links: bool) -> str:
     titulo = (vars_dict.get("TITULO") or "[SIN_TITULO]").strip().upper()
-
     # 🔥 línea fija
     linea = "✨━━━━━━━━━━━━━━━✨"
-
     enlaces = []
-
     if use_links:
         for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
             v = vars_dict.get(k)
@@ -2541,11 +2144,8 @@ def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
         if vars_dict.get("LINK_ETER"): enlaces.append("¡Búscanos en EternalMangas!")
         if vars_dict.get("LINK_LEC"):  enlaces.append("¡Búscanos en VisorJPG!")
         if vars_dict.get("LINK_COL"):  enlaces.append("¡Búscanos en CapibaraTraductor!")
-
     enlaces_texto = "\n".join(enlaces) if enlaces else "[No hay enlaces]"
-
     disponible_text = "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮" if choice == "1" else "𝔂𝓪 𝓭𝓲𝓼𝓹𝓸𝓷𝓲𝓫𝓵𝓮𝓼"
-
     return (
 f"✨ ¡Buenas buenas, gente hermosa! ✨\n"
 f"🔔 ¡Habemus actualización! 🔔\n\n"
@@ -2557,7 +2157,6 @@ f"📍 LÉELO AQUÍ:\n"
 f"{enlaces_texto}\n\n"
 f"¡Gracias por su paciencia, por leer y por todos esos comentarios que nos motivan! 💫"
     )
-
 # --- Render de plantilla_cath ---
 def render_plantilla_cath(vars_dict: Dict[str, Any], cap_text: str) -> str:
     """
@@ -2569,7 +2168,6 @@ def render_plantilla_cath(vars_dict: Dict[str, Any], cap_text: str) -> str:
         if v is None or (isinstance(v, str) and not v.strip()):
             return f"[NO_{k}]"
         return v
-
     texto_cath = (
 f"### 📢 <@&1339346858459402353> de: Break Scan\n"
 f"# 📚 {safe('TITULO')}\n"
@@ -2578,7 +2176,6 @@ f"- 🔸 **Ver en:** {safe('LINK_GLOBAL_CATH')}\n"
 f"## ¡Muchas gracias por el apoyo, disfrútenlo!"
     )
     return texto_cath
-
 # --- Render de plantilla_eter ---
 def render_plantilla_eter(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
     """
@@ -2590,7 +2187,6 @@ def render_plantilla_eter(vars_dict: Dict[str, Any], cap_text: str, caps_word_te
         if v is None or (isinstance(v, str) and not v.strip()):
             return f"[NO_{k}]"
         return v
-
     texto_eter = (
 f"@everyone\n"
 f"**{caps_word_text} {cap_text}**\n"
@@ -2599,7 +2195,6 @@ f"🔗 Link: 👉 {safe('LINK_ETER')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_eter
-    
 # --- Render de plantilla_lec ---
 def render_plantilla_lec(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
     """
@@ -2611,7 +2206,6 @@ def render_plantilla_lec(vars_dict: Dict[str, Any], cap_text: str, caps_word_tex
         if v is None or (isinstance(v, str) and not v.strip()):
             return f"[NO_{k}]"
         return v
-
     texto_lec = (
 f"@everyone\n"
 f"**{caps_word_text} {cap_text}**\n"
@@ -2620,7 +2214,6 @@ f"🔗 Link: 👉 {safe('LINK_LEC')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_lec
-
 # --- Render de plantilla_col ---
 def render_plantilla_col(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
     """
@@ -2632,7 +2225,6 @@ def render_plantilla_col(vars_dict: Dict[str, Any], cap_text: str, caps_word_tex
         if v is None or (isinstance(v, str) and not v.strip()):
             return f"[NO_{k}]"
         return v
-
     texto_col = (
 f"@everyone\n"
 f"**{caps_word_text} {cap_text}**\n"
@@ -2641,7 +2233,6 @@ f"🔗 Link: 👉 {safe('LINK_COL')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_col
-
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -2649,11 +2240,6 @@ async def on_ready():
     if not calendario_window.is_running():
         calendario_window.start()
     print(f"✨ Bot en línea como {bot.user}")
-    try:
-        await fetcher.start()
-        print("✅ Playwright/Chromium iniciado")
-    except Exception as e:
-        print("⚠️ No se pudo iniciar Playwright:", e)
 # Bloqueo global para registros
 registro_lock = asyncio.Lock()
 @bot.event
@@ -2674,7 +2260,6 @@ async def on_message(message):
     if not message.channel_mentions:
         return
     canal_proyecto = message.channel_mentions[0]
-
     # detectar número capítulo
     match = re.search(r"\b(\d{1,3})\b", message.content)
     if not match:
@@ -2682,7 +2267,6 @@ async def on_message(message):
     cap = int(match.group(1))
     if cap > 99:
         return
-
     # nombre del hilo según tipo de registro
     if tipo_registro == "regis-clean":
         nombre_hilo = "LIMPIEZA"
@@ -2690,13 +2274,11 @@ async def on_message(message):
         nombre_hilo = "EDICIÓN"
     elif tipo_registro == "regis-trad":
         nombre_hilo = "TRADUCCIÓN"
-
     # obtener hilo
     hilo = await obtener_o_crear_hilo(canal_proyecto, nombre_hilo)
     # obtener mensaje registro
     registro = await obtener_registro(hilo)
     fecha = datetime.now().strftime("%d-%b-%Y")
-
     async with registro_lock:
         lineas = registro.content.split("\n")
         indice = cap + 2  # porque hay encabezado
@@ -2723,7 +2305,6 @@ async def on_message(message):
         # actualizar mensaje
         await registro.edit(content="\n".join(lineas))
     await bot.process_commands(message)
-
 async def enviar_recordatorio(
     guild,
     proyecto,
@@ -2736,11 +2317,9 @@ async def enviar_recordatorio(
 ):
     nombre_canal = proyecto.lstrip("#")
     canal = discord.utils.get(guild.channels, name=nombre_canal)
-
     if not canal:
         print(f"⚠ No se encontró el canal del proyecto: {nombre_canal}")
         return
-
     mensaje_link = f"https://discord.com/channels/{guild.id}/{asign_channel_id}/{msg_id}"
     embed = discord.Embed(
         title="⋆ ˖ ⏱︎.ᐟ ",
@@ -2768,7 +2347,6 @@ async def enviar_recordatorio(
         content=f" (╭ರ_•́) ||{mention}||",  # espacio con spoiler
         embed=embed
     )
-
 # Comando !drive
 @bot.command()
 async def drive(ctx):
@@ -2778,27 +2356,20 @@ async def drive(ctx):
     last_drive_time = time.time()
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-
     await ctx.send("🔍 Buscando enlaces de Drive en los mensajes fijados...")
-
     creds = authenticate()
     service = build("drive", "v3", credentials=creds)
     pinned_messages = await ctx.channel.pins()
-
     found_any = False  # 🌸 Bandera para saber si hubo enlaces
-
     for msg in pinned_messages:
         links = extract_drive_links(msg.content)
         if not links:
             continue
-
         found_any = True  # Sí hubo al menos un enlace
-
         for link in links:
             folder_id = extract_id(link)
             if not folder_id:
                 continue
-
             try:
                 items = service.files().list(
                     q=f"'{folder_id}' in parents and trashed=false",
@@ -2825,7 +2396,6 @@ async def drive(ctx):
                     elif "qc" in name_lower or "ready" in name_lower:
                         qc_caps = traverse_folder(service, item["id"])
                         cover_caps = traverse_cover(service, item["id"])
-
                 # --- 💖 Embed bonito con color sakura ---
                 embed = discord.Embed(
                     title="🌸 Saku — Revisión de Drive",
@@ -2839,9 +2409,7 @@ async def drive(ctx):
                 embed.add_field(name="🎨 COVER", value=join_ranges(cover_caps), inline=True)
                 embed.add_field(name="⬆️ CHECKED", value=join_ranges(qc_caps), inline=True)
                 embed.set_footer(text="Revisión completada con éxito 🌸")
-
                 await ctx.send(embed=embed)
-
             except Exception as e:
                 embed_error = discord.Embed(
                     title="⚠️ Saku — Error de acceso",
@@ -2851,7 +2419,6 @@ async def drive(ctx):
                 )
                 embed_error.set_footer(text=str(e))
                 await ctx.send(embed=embed_error)
-
     # 🌸 Si no se encontró ningún enlace Drive
     if not found_any:
         embed_no_links = discord.Embed(
@@ -2862,7 +2429,6 @@ async def drive(ctx):
         )
         embed_no_links.set_footer(text="Asegúrate de fijar el enlace DRIVE apropiadamente 💖")
         await ctx.send(embed=embed_no_links)
-
 # Comando !raw
 @bot.command()
 async def raw(ctx):
@@ -2871,9 +2437,7 @@ async def raw(ctx):
     # Lógica completa de tu Saku_RAW aquí
     await ctx.send("🔍 Buscando enlaces de RAW en los mensajes fijados...")
     pinned = await ctx.channel.pins()
-
     encontrados = False
-
     for msg in pinned:
         urls = re.findall(r"https?://[^\s>]+", msg.content)
         for url in urls:
@@ -2881,9 +2445,7 @@ async def raw(ctx):
                 "eternalmangas.org", "lectorjpg.com", "catharsisworld", "drive.google.com"
             ]):
                 continue
-
             encontrados = True
-
             lineas = msg.content.splitlines()
             texto_arriba = ""
             for i, linea in enumerate(lineas):
@@ -2892,14 +2454,10 @@ async def raw(ctx):
                     if posible_texto:
                         texto_arriba = posible_texto
                     break
-
             dominio = re.search(r"https?://(?:www\.)?([^/]+)/", url)
             sitio = dominio.group(1) if dominio else "Sitio desconocido"
-
             titulo_embed = f"{texto_arriba} ({sitio.upper()})" if texto_arriba else f"{sitio.upper()}"
-
             cap, evento = detectar_evento(url)
-
             if cap:
                 embed = discord.Embed(
                     title=titulo_embed,
@@ -2912,9 +2470,7 @@ async def raw(ctx):
                     description="❌ Estructura incompatible — Revisión manual requerida",
                     color=0xFF5C5C
                 )
-
             await ctx.send(embed=embed)
-
     if not encontrados:
         embed = discord.Embed(
             title="🌸 Saku_RAW — *Sin enlaces válidos*",
@@ -2923,7 +2479,6 @@ async def raw(ctx):
         )
         embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
         await ctx.send(embed=embed)
-        
 # Comando !sitio
 @bot.command()
 async def sitio(ctx):
@@ -2935,10 +2490,8 @@ async def sitio(ctx):
     task_map = {}  # para saber qué resultado pertenece a qué sitio
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(evento_cath_async(pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
+        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
         task_map[len(tasks)-1] = "catharsis"
-        #tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
-        #task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
     # --- ETERNAL ---
@@ -3035,16 +2588,13 @@ def escribir_a_hoja(canal, categoria, resultados):
         range_name = f"{SHEET_NAME}!A2:K"  # <-- empieza en fila 2
         resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
         values = resp.get("values", [])
-
         fila_existente = None
         ultimo_item = 0
-
         for i, row in enumerate(values, start=2):  # <-- offset de fila 2
             if len(row) > 0 and row[0].isdigit():
                 ultimo_item = max(ultimo_item, int(row[0]))
             if len(row) > 1 and row[1].strip().lower() == canal.lower():
                 fila_existente = i
-
         item_val = fila_existente - 1 if fila_existente else (ultimo_item + 1)
         fila = [
             str(item_val),
@@ -3059,9 +2609,7 @@ def escribir_a_hoja(canal, categoria, resultados):
             resultados.get("col_cap", "N/D"),
             resultados.get("col_date", "N/D")        
         ]
-
         body = {"values": [fila]}
-
         if fila_existente:
             rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:K{fila_existente}"
             sheet.values().update(
@@ -3078,19 +2626,15 @@ def escribir_a_hoja(canal, categoria, resultados):
                 insertDataOption="INSERT_ROWS",
                 body=body
             ).execute()
-
     except Exception as e:
         print(f"❌ Error al escribir en la hoja: {e}")
-        
 # Comando !table
 @bot.command()
 @rol_permitido("table")
 async def table(ctx):
     if ctx.guild.id not in GUILD_IDS:
         return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-
     await ctx.send("🔍 Analizando lista...")
-
     def extraer_dias(texto):
         if not texto or texto.lower() in ["n/a", "no disponible"]:
             return None
@@ -3099,7 +2643,6 @@ async def table(ctx):
             return int(m.group(1)) * 30 if m else 30
         m = re.search(r"(\d+)\s*día", texto)
         return int(m.group(1)) if m else None
-
     def obtener_icono(sitio, dias):
         if dias is None:
             return "⚪"
@@ -3117,15 +2660,12 @@ async def table(ctx):
                 return "🟡"
             else:
                 return "🟢"
-
     try:
         range_name = f"{SHEET_NAME}!A2:K"
         resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
         values = resp.get("values", [])
-
         if not values:
             return await ctx.send("❌ No hay datos registrados en la hoja.")
-
         proyectos = []
         for row in values:
             if len(row) < 10:
@@ -3136,7 +2676,6 @@ async def table(ctx):
             eter_date = row[6]
             lec_date = row[8]
             col_date = row[10]
-
             urg_total = sum(
                 d for d in [
                     extraer_dias(cath_date),
@@ -3145,7 +2684,6 @@ async def table(ctx):
                     extraer_dias(col_date)
                 ] if d is not None
             )
-
             proyectos.append({
                 "canal": canal_nombre,
                 "categoria": categoria,
@@ -3155,31 +2693,25 @@ async def table(ctx):
                 "col_cap": row[9], "col_date": col_date,
                 "urg": urg_total
             })
-
         proyectos.sort(key=lambda x: x["urg"], reverse=True)
-
         total = len(proyectos)
         por_bloque = 10
         grupos = [proyectos[i:i+por_bloque] for i in range(0, total, por_bloque)]
-
         for i, grupo in enumerate(grupos, start=1):
             texto = ""
             for p in grupo:
                 canal_obj = discord.utils.get(ctx.guild.channels, name=p["canal"])
                 canal_mencion = f"<#{canal_obj.id}>" if canal_obj else f"#{p['canal']}"
-
                 # convertir fechas a días
                 d_cath = extraer_dias(p["cath_date"])
                 d_eter = extraer_dias(p["eter_date"])
                 d_lec = extraer_dias(p["lec_date"])
                 d_col = extraer_dias(p["col_date"])
-
                 # obtener iconos
                 i_cath = obtener_icono("CATHARSIS", d_cath)
                 i_eter = obtener_icono("ETERNAL", d_eter)
                 i_lec = obtener_icono("LECTOR", d_lec)
                 i_col = obtener_icono("COLOR", d_col)
-
                 texto += (
                     f"**{canal_mencion} — {p['categoria']}**\n"
                     f"{i_cath} **CATHARSIS**: {p['cath_cap']} - *({p['cath_date']})*\n"
@@ -3187,14 +2719,12 @@ async def table(ctx):
                     f"{i_lec} **LECTORJPG**: {p['lec_cap']} - *({p['lec_date']})*\n"
                     f"{i_col} **COLORCITO**: {p['col_cap']} - *({p['col_date']})*\n\n"
                 )
-
             embed = discord.Embed(
                 title=f"📋 Resumen de proyectos ({min(i*por_bloque, total)}/{total})",
                 description=texto,
                 color=0xF8C8DC
             )
             await ctx.send(embed=embed)
-
     except Exception as e:
         await ctx.send(f"❌ Error al obtener los datos: {e}")
         print(f"❌ Error en !table: {e}")
@@ -3210,7 +2740,6 @@ async def table(ctx):
 async def acceso(ctx, user: discord.Member = None):
     """
     Otorga acceso de editor a un usuario según la lista USUARIOS.
-
     Además:
     - Lee USUARIOS!B:E.
     - B = Discord ID
@@ -3223,7 +2752,6 @@ async def acceso(ctx, user: discord.Member = None):
       pero sincroniza igualmente la columna E.
     - Si el canal no tiene código (ej. fuerza-del-destino), no modifica E.
     """
-
     if user is None:
         embed = discord.Embed(
             title="🌸 Saku — Acceso",
@@ -3235,14 +2763,9 @@ async def acceso(ctx, user: discord.Member = None):
         )
         await ctx.send(embed=embed)
         return
-
     try:
-        # ==========================================================
         # 1. IDENTIFICAR EL PROYECTO DESDE EL NOMBRE DEL CANAL
-        # ==========================================================
-
         canal_nombre = ctx.channel.name.strip()
-
         # Esperamos algo como:
         # 025-fuerza-del-destino
         #
@@ -3250,34 +2773,25 @@ async def acceso(ctx, user: discord.Member = None):
         # fuerza-del-destino
         #
         # no habrá código de proyecto.
-
         match_proyecto = re.match(
             r"^(\d+)-",
             canal_nombre
         )
-
         if match_proyecto:
             codigo_proyecto = match_proyecto.group(1)
-
             print(
                 f"🔎 acceso → "
                 f"Proyecto detectado en canal: {codigo_proyecto}"
             )
         else:
             codigo_proyecto = None
-
             print(
                 f"ℹ️ acceso → "
                 f"Canal '{canal_nombre}' no tiene código de proyecto. "
                 f"No se modificará USUARIOS!E."
             )
-
-        # ==========================================================
         # 2. OBTENER ENLACE DRIVE FIJADO
-        # ==========================================================
-
         drive_link = None
-
         # Leer mensajes fijados
         pinned = await ctx.channel.pins()
         for message in pinned:
@@ -3285,7 +2799,6 @@ async def acceso(ctx, user: discord.Member = None):
             if "drive.google.com" in contenido:
                 drive_link = contenido
                 break
-
         if not drive_link:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
@@ -3297,16 +2810,11 @@ async def acceso(ctx, user: discord.Member = None):
             )
             await ctx.send(embed=embed)
             return
-
-        # ==========================================================
         # 3. EXTRAER ID DEL ARCHIVO/CARPETA
-        # ==========================================================
-
         match = re.search(
             r"/(?:folders|file)/([a-zA-Z0-9_-]+)",
             drive_link
         )
-
         if not match:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
@@ -3318,41 +2826,27 @@ async def acceso(ctx, user: discord.Member = None):
             )
             await ctx.send(embed=embed)
             return
-
         file_id = match.group(1)
-
-        # ==========================================================
         # 4. LEER USUARIOS B:E
-        # ==========================================================
-
         USERS_SHEET_NAME = os.getenv("USERS_SHEET_NAME")
-
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{USERS_SHEET_NAME}!B2:E"
         ).execute().get("values", [])
-
-        # ==========================================================
         # 5. BUSCAR USUARIO
         #
         # B = Discord ID
         # C = Email
         # D = VPN       ← IGNORADA
         # E = ACCESO
-        # ==========================================================
-
         discord_id = str(user.id)
-
         matched = None
         matched_sheet_row = None
-
         for index, row in enumerate(data, start=2):
-
             if len(row) >= 2 and str(row[0]).strip() == discord_id:
                 matched = row
                 matched_sheet_row = index
                 break
-
         if not matched:
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
@@ -3364,48 +2858,33 @@ async def acceso(ctx, user: discord.Member = None):
             )
             await ctx.send(embed=embed)
             return
-
         email = matched[1].strip()
-
         # E puede no existir todavía si la fila está incompleta.
         acceso_actual = ""
-
         if len(matched) >= 4:
             acceso_actual = str(matched[3]).strip()
-
         print(
             f"👤 acceso → Usuario: {user} | "
             f"Discord ID: {discord_id} | "
             f"Email: {email}"
         )
-
         print(
             f"📋 acceso → Acceso actual: "
             f"{acceso_actual or '(vacío)'}"
         )
-
-        # ==========================================================
         # 6. CREAR CLIENTE DRIVE
-        # ==========================================================
-
         drive_service = build(
             "drive",
             "v3",
             credentials=creds
         )
-
-        # ==========================================================
         # 7. VERIFICAR SI YA TIENE ACCESO
-        # ==========================================================
-
         existing = None
-
         try:
             permissions = drive_service.permissions().list(
                 fileId=file_id,
                 fields="permissions(emailAddress,role)"
             ).execute()
-
             existing = next(
                 (
                     p for p in permissions.get("permissions", [])
@@ -3413,14 +2892,11 @@ async def acceso(ctx, user: discord.Member = None):
                 ),
                 None
             )
-
         except Exception as e:
             print(
                 f"⚠️ acceso → "
                 f"No se pudieron consultar los permisos existentes: {e}"
             )
-
-        # ==========================================================
         # 8. SI YA TENÍA ACCESO
         #
         # IMPORTANTE:
@@ -3428,10 +2904,7 @@ async def acceso(ctx, user: discord.Member = None):
         #
         # El mensaje público se mantiene igual,
         # pero continuamos para sincronizar USUARIOS!E.
-        # ==========================================================
-
         if existing:
-
             embed = discord.Embed(
                 title="🌸 Saku — Acceso",
                 description=(
@@ -3440,23 +2913,17 @@ async def acceso(ctx, user: discord.Member = None):
                 ),
                 color=0xFFB6C1
             )
-
             await ctx.send(embed=embed)
-
             print(
                 f"ℹ️ acceso → "
                 f"{email} ya tenía acceso como "
                 f"{existing.get('role', 'desconocido')}."
             )
-
         else:
-
-            # ======================================================
+=
             # 9. OTORGAR ACCESO DE EDITOR
-            # ======================================================
-
+=
             try:
-
                 drive_service.permissions().create(
                     fileId=file_id,
                     body={
@@ -3466,7 +2933,6 @@ async def acceso(ctx, user: discord.Member = None):
                     },
                     fields="id"
                 ).execute()
-
                 embed = discord.Embed(
                     title="🌸 Saku — Acceso",
                     description=(
@@ -3474,25 +2940,19 @@ async def acceso(ctx, user: discord.Member = None):
                     ),
                     color=0xFFB6C1
                 )
-
                 await ctx.send(embed=embed)
-
                 print(
                     f"✅ acceso → "
                     f"Acceso writer concedido a {email}."
                 )
-
             except Exception as e:
-
                 err_text = str(e)
-
                 # Caso especial:
                 # correo propietario / permiso no aplicable
                 if (
                     "invalid or not applicable for the given permission type"
                     in err_text
                 ):
-
                     embed = discord.Embed(
                         title="🌸 Saku — Acceso",
                         description=(
@@ -3505,11 +2965,8 @@ async def acceso(ctx, user: discord.Member = None):
                         ),
                         color=0xFFC0CB
                     )
-
                     await ctx.send(embed=embed)
-
                 else:
-
                     embed = discord.Embed(
                         title="🌸 Saku — Acceso",
                         description=(
@@ -3518,16 +2975,11 @@ async def acceso(ctx, user: discord.Member = None):
                         ),
                         color=0xFFB6C1
                     )
-
                     await ctx.send(embed=embed)
-
                 print(f"[ERROR acceso] {e}")
-
                 # Si Drive no pudo conceder acceso,
                 # no sincronizamos el proyecto como si todo hubiera salido bien.
                 return
-
-        # ==========================================================
         # 10. SINCRONIZAR USUARIOS!E
         #
         # Solo si el canal tiene formato:
@@ -3538,39 +2990,26 @@ async def acceso(ctx, user: discord.Member = None):
         # 025-fuerza-del-destino
         #
         # Si no hay código, no tocamos E.
-        # ==========================================================
-
         if codigo_proyecto:
-
             accesos = [
                 x.strip()
                 for x in acceso_actual.split(",")
                 if x.strip()
             ]
-
-            # ======================================================
+=
             # 11. EVITAR DUPLICADOS
-            # ======================================================
-
+=
             if codigo_proyecto in accesos:
-
                 print(
                     f"ℹ️ acceso → "
                     f"Proyecto {codigo_proyecto} "
                     f"ya estaba registrado en USUARIOS!E."
                 )
-
             else:
-
                 # Agregar siempre al final.
                 accesos.append(codigo_proyecto)
-
                 nuevo_acceso = ",".join(accesos)
-
-                # ==================================================
                 # 12. ACTUALIZAR COLUMNA E
-                # ==================================================
-
                 sheet.values().update(
                     spreadsheetId=SPREADSHEET_ID,
                     range=f"{USERS_SHEET_NAME}!E{matched_sheet_row}",
@@ -3581,27 +3020,19 @@ async def acceso(ctx, user: discord.Member = None):
                         ]
                     }
                 ).execute()
-
                 print(
                     f"✅ acceso → "
                     f"USUARIOS!E{matched_sheet_row} actualizado: "
                     f"{nuevo_acceso}"
                 )
-
         else:
-
             print(
                 f"⏭️ acceso → "
                 f"No se sincronizó USUARIOS!E porque "
                 f"'{canal_nombre}' no tiene código de proyecto."
             )
-
-    # ==============================================================
     # ERROR GENERAL
-    # ==============================================================
-
     except Exception as e:
-
         embed = discord.Embed(
             title="🌸 Saku — Acceso",
             description=(
@@ -3610,13 +3041,10 @@ async def acceso(ctx, user: discord.Member = None):
             ),
             color=0xFFB6C1
         )
-
         await ctx.send(embed=embed)
-
         print(
             f"[ERROR acceso general] {e}"
         )
-
 # Comando !gen
 @bot.command()
 @rol_permitido("gen")
@@ -3839,19 +3267,15 @@ async def updater_cmd(ctx: commands.Context):
 @rol_permitido("upraw")
 async def upraw(ctx):
     await ctx.send("💬 ¿Cuál es el canal/proyecto?")
-
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel
-
     # 1️⃣ — PEDIR CANAL/PROYECTO
     try:
         msg = await bot.wait_for("message", check=check, timeout=30)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Se acabó el tiempo, mi amor. El proceso ha sido cancelado 💔")
-
 #    proyecto = msg.content.strip()
     content = msg.content.strip()
-
     # Si envió una mención de canal como <#123123123123>
     if len(msg.channel_mentions) > 0:
         ch = msg.channel_mentions[0]
@@ -3859,31 +3283,24 @@ async def upraw(ctx):
     else:
         # Si lo escribió a mano (texto normal)
         proyecto = content
-
-
     # 2️⃣ — PEDIR LISTA DE CAPÍTULOS
     await ctx.send(
         "📄 **Escribe los capítulos de RAW subidos (separados por espacio)**, Ejemplo: `12 13 14 15 16`"
     )
-
     try:
         msg2 = await bot.wait_for("message", check=check, timeout=180)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Se acabó el tiempo, corazón. El proceso ha sido cancelado 🥺")
-
     # Convertir a lista de capítulos
     caps_text = msg2.content.strip()
     try:
         capitulos = [float(x) for x in caps_text.split()]
     except:
         return await ctx.send("❌ **Formato inválido.** Usa números como `12 13  / 31.1 31.2` 💔")
-
     if len(capitulos) == 0:
         return await ctx.send("❌ No enviaste capítulos, amor.")
-
     # Ordenarlos (por si acaso)
     capitulos.sort()
-
     # 3️⃣ — PREGUNTAR IDIOMA
     await ctx.send(
         "🌐 **¿En qué idioma están estas raws?**\n"
@@ -3893,19 +3310,16 @@ async def upraw(ctx):
         " ⤷ ４ ► Japonés ⁽ ᴶᴬᴾ ⁾\n\n"
         "*Escribe solo el número.*" 
     )
-
     try:
         msg3 = await bot.wait_for("message", check=check, timeout=120)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Se acabó el tiempo, vida. El proceso se ha cancelado 💞")
-
     try:
         idioma = int(msg3.content.strip())
         if idioma not in [1, 2, 3, 4]:
             raise ValueError
     except:
         return await ctx.send("❌ Número inválido. Debe ser 1,2,3 o 4. El proceso se ha cancelado 💔")
-
     # Mapeo de idioma → columna
     idioma_cols = {
         1: ["1","0","0","0"], # KR
@@ -3913,32 +3327,25 @@ async def upraw(ctx):
         3: ["0","0","1","0"], # INDO
         4: ["0","0","0","1"], # CHIN
     }
-
     idioma_values = idioma_cols[idioma]
-
     # 4 — PREGUNTAR SI VA A SEPARAR ROLES
     await ctx.send(
         "🔒 **¿Vas a separar roles?**\n"
         "`1` para SÍ\n"
         "`0` para NO\n"
     )
-
     try:
         msg_sep = await bot.wait_for("message", check=check, timeout=10)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Se acabó el tiempo, mi cielo.")
-
     separar_roles = msg_sep.content.strip()
     if separar_roles not in ["0", "1"]:
         return await ctx.send("❌ Debes escribir `1` o `0`.")
-
     trad_apartado = ""
     clean_apartado = ""
     type_apartado = ""
-
     # SI SEPARA ROLES
     if separar_roles == "1":
-
         await ctx.send(
             "✏️ **Escribe en orden qué roles deseas separar:**\n"
             "### UN ROL\n"
@@ -3955,17 +3362,12 @@ async def upraw(ctx):
             try:
                 msg_roles = await bot.wait_for("message", check=check, timeout=120)
                 partes = msg_roles.content.strip().split()
-
                 if len(partes) != 3:
                     raise ValueError
-
                 r_trad, r_clean, r_type = partes
-
                 if r_trad not in ["0","1"] or r_clean not in ["0","1"] or r_type not in ["0","1"]:
                     raise ValueError
-
                 total_bloqueados = int(r_trad) + int(r_clean) + int(r_type)
-
                 if total_bloqueados == 0 or total_bloqueados == 3:
                     await ctx.send(
                         "⚠️ Debes bloquear al menos 1 rol y máximo 2.\n"
@@ -3973,72 +3375,53 @@ async def upraw(ctx):
                         "Intenta nuevamente:"
                     )
                     continue
-
                 break  # todo válido
-
             except asyncio.TimeoutError:
                 await ctx.send("⏳ Se acabó el tiempo para elegir roles. El proceso ha sido cancelado 💔")
                 return  # 🔥 IMPORTANTE: salir del comando
-
             except ValueError:
                 await ctx.send("❌ Formato inválido. Escribe algo como: `1 0 0`")
-
         # Marcar como APARTADO
         trad_apartado = "APARTADO" if r_trad == "1" else ""
         clean_apartado = "APARTADO" if r_clean == "1" else ""
         type_apartado = "APARTADO" if r_type == "1" else ""
-
         prioridad = "1"  # Automático
-
         # Construir texto de roles bloqueados
         roles_bloqueados_lista = []
-
         if r_trad == "1":
             roles_bloqueados_lista.append("TRAD")
         if r_clean == "1":
             roles_bloqueados_lista.append("CLEAN")
         if r_type == "1":
             roles_bloqueados_lista.append("TYPE")
-
         roles_bloqueados_texto = " | ".join(roles_bloqueados_lista)
-
     # SI NO SEPARA ROLES
     else:
-
         await ctx.send(
             "⚠️ **¿Tiene prioridad?**\n"
             "`1` para SÍ\n"
             "`0` para NO\n"
         )
-
         try:
             msg4 = await bot.wait_for("message", check=check, timeout=120)
         except asyncio.TimeoutError:
             return await ctx.send("⏳ Se acabó el tiempo mi amorcito 😿")
-
         resp = msg4.content.strip()
-
         if resp not in ["0", "1"]:
             return await ctx.send("❌ Debes escribir `1` o `0`. El proceso ha sido cancelado 💔")
-
         prioridad = resp
-
     # 5 — LEER HOJA PARA SABER EL SIGUIENTE ÍTEM
     hoja = SHEET_NAME3
     existing = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{hoja}!A:A"
     ).execute()
-
     existing_vals = existing.get("values", [])
     next_item = len(existing_vals)  # porque A1 es la cabecera si existe
-
     # 6 — PREPARAR FILAS A AÑADIR
     nuevas_filas = []
-
     for idx, cap in enumerate(capitulos):
         item_num = next_item + idx  # secuencial
-
         fila = [
             str(item_num),      # A — Item
             proyecto,           # B — Proyecto
@@ -4054,9 +3437,7 @@ async def upraw(ctx):
             "", "", "","", "", "",  # L, M, N — Roles / O, P, Q — IDs
             prioridad           # R — PRIORIDAD
         ]
-
         nuevas_filas.append(fila)
-
     # 7 — ESCRIBIR EN GOOGLE SHEETS
     try:
         sheet.values().append(
@@ -4068,13 +3449,11 @@ async def upraw(ctx):
         ).execute()
     except Exception as e:
         return await ctx.send(f"❌ Error al escribir en la hoja:\n```\n{e}\n```")
-
     if proyecto.startswith("#"):
         nombre_canal = proyecto[1:]
         canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
         if canal_discord:
             proyecto = canal_discord.mention
-
     # 8 Mensaje bonito final UwU
     mensaje_final = (
         f"✅ **Se han registrado {len(capitulos)} capítulos como RAW para {proyecto}**\n"
@@ -4083,7 +3462,6 @@ async def upraw(ctx):
         mensaje_final += f"📝 Nota: Roles bloqueados: **{roles_bloqueados_texto}**\n"
     mensaje_final += "Todo quedó guardado en la hoja **ASIGNACIONES** 💖✨"
     await ctx.send(mensaje_final)
-
 # Comando !liquidar
 @bot.command()
 @rol_permitido("acmin")
@@ -4314,7 +3692,6 @@ async def liquidar(ctx):
         f"👤 Responsable: **{admin_marcador}**\n\n"
         "✨ *Los roles liquidados quedaron cerrados por manejo de ADMINISTRADOR.*"
     )
-
 # Comando !trad
 @bot.command()
 @canal_permitido("trad")
@@ -4326,14 +3703,11 @@ async def trad(ctx):
         return
     async with assign_lock:
         last_assign_time = time.time()
-
         print(f"[ASSIGN] TRAD solicitado por {ctx.author.id}")
         es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
         progreso_actual = 0
-
         if es_newbie:
             progreso_actual = await contar_caps_usuario(ctx.author.id, "TRAD")
-
             if progreso_actual >= 5:
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
@@ -4351,7 +3725,6 @@ async def trad(ctx):
             " ⤷ ５ ► Japonés ⁽ ᴶᴬᴾ ⁾\n\n"
             "*Escribe solo el número.*"
         )
-
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel        
         try:
@@ -4361,23 +3734,17 @@ async def trad(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
-            
         # Validar roles según idioma
         if idioma == 1 and not tiene_rol(ctx, ["tr_kr_"]):
             return await ctx.send("🚫 No tienes el rol **TR-KR**, amor.")
-
         elif idioma == 2 and not tiene_rol(ctx, ["tr_ing_"]):
             return await ctx.send("🚫 No tienes el rol **TR-ING**, cielito.")
-
         elif idioma == 3 and not tiene_rol(ctx, ["tr_indo_"]):
             return await ctx.send("🚫 No tienes el rol **TR-INDO**, cosita.")
-
         elif idioma == 4 and not tiene_rol(ctx, ["tr_ing_manga_"]):
             return await ctx.send("🚫 No tienes el rol **TR-ING-MANGA**, quesito.")
-
         elif idioma == 5 and not tiene_rol(ctx, ["tr_jap_"]):
             return await ctx.send("🚫 No tienes el rol **TR-JAP**, osito de felpa.")
-        
         # Definir columna de idioma
         if idioma == 1:      # Coreano
             idioma_index = 8
@@ -4404,45 +3771,35 @@ async def trad(ctx):
         fila_normal = None
         for i in range(1, len(rows)):
             row = rows[i]
-
             raw = str(row[3]).strip()
             trad_status = str(row[4]).strip()
             idioma_flag = str(row[idioma_index - 1]).strip()
             prioridad = str(row[17]).strip() if len(row) > 17 else "0"
             proyecto_nombre = str(row[1]).lower()
-
             # Filtro especial para manga en opción 4
             if idioma == 4 and "manga" not in proyecto_nombre:
                 continue
-
             if raw == "1" and trad_status == "" and idioma_flag == "1":
                 if prioridad == "1" and fila_prioritaria is None:
                     fila_prioritaria = i
                 elif prioridad != "1" and fila_normal is None:
                     fila_normal = i
-
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
-
         if fila_index is None:
             return await ctx.send("(っ˘̩╭╮˘̩)っ  No hay capítulos disponibles según tu especificación, dulzura.")
-
         proyecto = rows[fila_index][1]
         capitulo = rows[fila_index][2]
-
         # Mención del canal si empieza con #
         if proyecto.startswith("#"):
             nombre_canal = proyecto[1:]
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto = canal_discord.mention
-
         es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
         extra_msg = ""
-
         if es_newbie:
             progreso = min(progreso_actual + 1, 5)
             mensaje_extra = obtener_mensaje_newbie(progreso)
-
             extra_msg = (
                 f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
                 f"{mensaje_extra}\n"
@@ -4503,7 +3860,6 @@ async def trad(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
-
 # Comando !clean
 @bot.command()
 @canal_permitido("clean")
@@ -4518,10 +3874,8 @@ async def clean(ctx):
         print(f"[ASSIGN] CLEAN solicitado por {ctx.author.id}")
         es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
         progreso_actual = 0
-
         if es_newbie:
             progreso_actual = await contar_caps_usuario(ctx.author.id, "CLEAN")
-
             if progreso_actual >= 5:
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
@@ -4534,7 +3888,6 @@ async def clean(ctx):
             "  ⤷ ２ ► Manga\n\n"
             "*Escribe solo el número.*"
         )
-            
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
         try:
@@ -4544,44 +3897,34 @@ async def clean(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
-
         # Validar roles CLEAN
         if tipo == 1 and not tiene_rol(ctx, ["cl_"]):
             return await ctx.send("🚫 No tienes el rol **CL**, cariño.")
-
         elif tipo == 2 and not tiene_rol(ctx, ["cl_manga_"]):
             return await ctx.send("🚫 No tienes el rol **CL-MANGA**, meloncito.")
-            
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A:X"
         ).execute()
         rows = data.get("values", [])
-
         fila_prioritaria = None
         fila_normal = None
-
         for i in range(1, len(rows)):
             row = rows[i] + [""] * 24
-
             raw = row[3]          # D
             clean_status = row[5] # F
             prioridad = row[17] if len(row) > 17 else "0"  # R
             proyecto_nombre = str(row[1]).lower()
-
             # Filtros por tipo
             if tipo == 1 and "manga" in proyecto_nombre:
                 continue
-
             if tipo == 2 and "manga" not in proyecto_nombre:
                 continue
-
             if raw == "1" and clean_status == "":
                 if prioridad == "1" and fila_prioritaria is None:
                     fila_prioritaria = i
                 elif prioridad != "1" and fila_normal is None:
                     fila_normal = i
-
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
         if fila_index is None:
             return await ctx.send("(｡•́︿•̀｡) No hay capítulos disponibles según tu especificación, mi cielito.")
@@ -4598,7 +3941,6 @@ async def clean(ctx):
         if es_newbie:
             progreso = min(progreso_actual + 1, 5)
             mensaje_extra = obtener_mensaje_newbie(progreso)
-
             extra_msg = (
                 f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
                 f"{mensaje_extra}\n"
@@ -4661,8 +4003,6 @@ async def clean(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
-
-
 # Comando !type
 @bot.command()
 @canal_permitido("type")
@@ -4677,10 +4017,8 @@ async def type(ctx):
         print(f"[ASSIGN] TYPE solicitado por {ctx.author.id}")
         es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)
         progreso_actual = 0
-
         if es_newbie:
             progreso_actual = await contar_caps_usuario(ctx.author.id, "TYPE")
-
             if progreso_actual >= 5:
                 return await ctx.send(
                     f"🚫 <@{ctx.author.id}> ¡Más despacio, velocista!\n"
@@ -4693,7 +4031,6 @@ async def type(ctx):
             "  ⤷ ２ ► Manga\n\n"
             "*Escribe solo el número.*"
         )
-
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
         try:
@@ -4703,13 +4040,10 @@ async def type(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
-
         if tipo == 1 and not tiene_rol(ctx, ["ed_"]):
             return await ctx.send("🚫 No tienes rol **ED**, cariño.")
-
         elif tipo == 2 and not tiene_rol(ctx, ["ed_manga_"]):
             return await ctx.send("🚫 No tienes rol **ED-MANGA**, caramelito.")
-            
         hoja = SHEET_NAME3
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
@@ -4720,30 +4054,24 @@ async def type(ctx):
         fila_normal = None
         def esta_completado(valor):
             return valor.startswith("COMPLETADO")
-            
         for i in range(1, len(rows)):
             row = rows[i] + [""] * 24
-
             raw = row[3]           # D
             trad_status = row[4]   # E
             clean_status = row[5]  # F
             type_status = row[6]   # G
             prioridad = row[17] if len(row) > 17 else "0"
             proyecto_nombre = str(row[1]).lower()
-
             # Filtro por tipo
             if tipo == 1 and "manga" in proyecto_nombre:
                 continue
-
             if tipo == 2 and "manga" not in proyecto_nombre:
                 continue
-                
             if raw == "1" and esta_completado(trad_status) and esta_completado(clean_status) and not type_status:
                 if prioridad == "1" and fila_prioritaria is None:
                     fila_prioritaria = i
                 elif prioridad != "1" and fila_normal is None:
                     fila_normal = i
-
         fila_index = fila_prioritaria if fila_prioritaria is not None else fila_normal
         if fila_index is None:
             return await ctx.send("o(TヘTo)  No hay capítulos disponibles según tu especificación, terroncito.")
@@ -4758,13 +4086,10 @@ async def type(ctx):
         es_newbie = any(role.id == ROL_NEWBIE for role in ctx.author.roles)            
         ROL_TYPE_QC = 1463686138689622250
         tiene_doble_rol = any(role.id == ROL_TYPE_QC for role in ctx.author.roles)
-
-
         extra_msg = ""
         if es_newbie and not tiene_doble_rol:
             progreso = min(progreso_actual + 1, 5)
             mensaje_extra = obtener_mensaje_newbie(progreso)
-
             extra_msg = (
                 f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
                 f"{mensaje_extra}\n"
@@ -4846,7 +4171,6 @@ async def type(ctx):
             "hoja": SHEET_NAME3,
             "timestamp": datetime.utcnow().timestamp()
         }
-        
 # Comando !check
 @bot.command()
 @canal_permitido("check")
@@ -4854,7 +4178,6 @@ async def check(ctx):
     global last_assign_time
     if not await check_assign_cooldown(ctx):
         return
-
     async with assign_lock:
         last_assign_time = time.time()
         print(f"[ASSIGN] QC solicitado por {ctx.author.id}")
@@ -4864,10 +4187,8 @@ async def check(ctx):
             "  ⤷ ２ ► Manga\n\n"
             "*Escribe solo el número.*"
         )
-
         def check_tipo(m):
             return m.author == ctx.author and m.channel == ctx.channel
-
         try:
             msg_tipo = await bot.wait_for("message", timeout=60.0, check=check_tipo)
             tipo = int(msg_tipo.content.strip())
@@ -4875,12 +4196,9 @@ async def check(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Número inválido, amor.")
-        
         await ctx.send("📚 ¿Cuántos capítulos deseas revisar? (máximo 15)")
-
         def check_msg(m):
             return m.author == ctx.author and m.channel == ctx.channel
-
         try:
             msg = await bot.wait_for("message", timeout=30.0, check=check_msg)
             cantidad = int(msg.content)
@@ -4888,19 +4206,16 @@ async def check(ctx):
                 return await ctx.send("⚠️ Debes elegir un número entre 1 y 15.")
         except:
             return await ctx.send("⏳ Tiempo agotado o número inválido.")
-
         # Leer hoja de asignaciones
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A2:Y"  # desde A hasta Y
         ).execute()
         rows = data.get("values", [])
-
         disponibles = []
         updates = []
         def esta_completado(valor):
             return str(valor).startswith("COMPLETADO")
-
         # Buscar capítulos disponibles para QC
         for i, row in enumerate(rows):
             row += [""] * 25  # asegurar al menos 25 columnas
@@ -4910,23 +4225,19 @@ async def check(ctx):
             # Filtro por tipo (igual que !type)
             if tipo == 1 and "manga" in proyecto_nombre:
                 continue
-
             if tipo == 2 and "manga" not in proyecto_nombre:
                 continue
             status_trad = str(row[4]).strip()
             status_clean = str(row[5]).strip()
             status_type = str(row[6]).strip()
             check_col = str(row[24]).strip()
-
             # Solo tomar capítulos que aún no estén completados y sin CHECKER
             if esta_completado(status_trad) and esta_completado(status_clean) and esta_completado(status_type) and not check_col:
                 disponibles.append((i, proyecto, capitulo))
                 if len(disponibles) >= cantidad:
                     break
-
         if not disponibles:
             return await ctx.send("😔 No hay capítulos disponibles para QC en este momento.")
-
         # Guardar @usuario en columna Y
         fecha_actual = datetime.now().strftime("%m/%d/%Y")
         nombre_visible = f"@{ctx.author.display_name} - {fecha_actual}"
@@ -4936,7 +4247,6 @@ async def check(ctx):
                 "range": f"{SHEET_NAME3}!Y{sheet_row_number}",
                 "values": [[nombre_visible]]
             })
-
         sheet.values().batchUpdate(
             spreadsheetId=SPREADSHEET_ID,
             body={
@@ -4944,7 +4254,6 @@ async def check(ctx):
                 "data": updates
             }
         ).execute()
-
         # Construir mensaje final con mención de canal si aplica
         mensaje_final = f"👁️ {ctx.author.mention}, tus asignaciones para QC son las siguientes:\n"
         for idx, (_, proyecto, capitulo) in enumerate(disponibles):
@@ -4955,11 +4264,9 @@ async def check(ctx):
                 if canal_discord:
                     proyecto = canal_discord.mention
             mensaje_final += f" *{letra}.* **CH. {capitulo}** -- {proyecto}\n"
-
         mensaje_final += f" > Total de capítulos a revisar: **{len(disponibles)}**"
         mensaje_final += "\n > *Cuando termines, reacciona a esta asignación con un  💖*"
         await ctx.send(mensaje_final)
-
 # Comando !status
 @bot.command()
 @rol_permitido("status")
@@ -5002,11 +4309,9 @@ async def status(ctx):
                         actual[key] = col_c
         if actual:
             proyectos.append(actual)
-
         # — Paginación
         por_embed = 1
         grupos = [proyectos[i:i+por_embed] for i in range(0, len(proyectos), por_embed)]
-
         for idx, grupo in enumerate(grupos, start=1):
             texto1 = f"\n\n**({idx}/{len(grupos)})**   "  # título simple
             #texto1 = f""  # título simple
@@ -5015,7 +4320,6 @@ async def status(ctx):
                 slug = p["hashtag"].replace("#", "")
                 canal = discord.utils.get(ctx.guild.channels, name=slug)
                 canal_mencion = f"<#{canal.id}>" if canal else p["hashtag"]
-
                 texto1 += (
                     f"{canal_mencion} — {p['categoria']}\n"
                 )
@@ -5026,19 +4330,16 @@ async def status(ctx):
                     f"LEC  - {p['LEC']:<3} {barra(p['LEC'])}\n"
                     f"COL  - {p['COL']:<3} {barra(p['COL'])}\n"
                 )
-
             # enviamos en bloque de código para mantener alineación
             await ctx.send(
                 f"{texto1}"
                 f"```{texto2}```"
                 f"ʚɞ\n\n"
             )
-
     except Exception as e:
         await ctx.send("❌ Error al generar status.")
         print("❌ Error en !status")
         traceback.print_exc()
-
 # Comando !create
 @bot.command()
 @commands.has_role(1357527939226533920)  # Rol ADMIN
@@ -5046,7 +4347,6 @@ async def create(ctx):
     try:
         drive_service = build("drive", "v3", credentials=creds)
         parent_folder_id = "1dhw0WVEF6itoevYdZ__YwoTosQgudZwm"
-
         # Buscar carpetas disponibles
         results = drive_service.files().list(
             q=f"'{parent_folder_id}' in parents and trashed=false",
@@ -5055,7 +4355,6 @@ async def create(ctx):
         disponibles = [f for f in results if f['name'].startswith("Z")]
         if not disponibles:
             return await ctx.send("❌ No hay carpetas numeradas disponibles.")
-
         # Elegir la de número más chico
         def extraer_num(nombre):
             try:
@@ -5063,14 +4362,11 @@ async def create(ctx):
             except:
                 return float('inf')
         carpeta_obj = min(disponibles, key=lambda f: extraer_num(f['name']))
-
         # Renombrar
         new_name = f"#{ctx.channel.name}"
         drive_service.files().update(fileId=carpeta_obj['id'], body={"name": new_name}).execute()
-
         # Link
         folder_link = f"https://drive.google.com/drive/folders/{carpeta_obj['id']}"
-
         # Enviar mensaje
         message = await ctx.send(
             f" > ***¡Espacio para proyecto creado!*** 📂\n"
@@ -5081,15 +4377,12 @@ async def create(ctx):
             await message.pin()
         except:
             await ctx.send("⚠️ No pude fijar el mensaje. Verifica permisos del bot.")
-
     except HttpError as e:
         await ctx.send("❌ Error al conectar con Google Drive.")
         print(f"[ERROR CREATE] {e}")
-
     except Exception as e:
         await ctx.send("⚠️ Ocurrió un error inesperado al crear la carpeta.")
         print(f"[ERROR CREATE GENERAL] {e}")
-
 # Comando !ficha
 @bot.command(name="ficha")
 @rol_permitido("ficha")
@@ -5381,7 +4674,6 @@ async def ficha_cmd(ctx: commands.Context):
 @rol_permitido("status")
 async def scan(ctx):
     await ctx.send("🔍 Escaneando asignaciones activas...")
-
     hoja = SHEET_NAME3
     try:
         data = sheet.values().get(
@@ -5390,52 +4682,37 @@ async def scan(ctx):
         ).execute()
     except Exception as e:
         return await ctx.send(f"❌ Error leyendo la hoja:\n{e}")
-
     rows = data.get("values", [])
-
     for i in range(len(rows)):
         rows[i] += [""] * (24 - len(rows[i]))
-
     tabla = []
     largos = {}
-
     headers = ["COOR", "USER", "ROL", "PROYECTO", "CAP"]
-
     for i in range(1, len(rows)):
         row = rows[i]
-
         proyecto = recortar_proyecto(row[1])[:15]
         capitulo = row[2]
-
         trad = str(row[4]).strip().upper()
         clean = str(row[5]).strip().upper()
         type_ = str(row[6]).strip().upper()
-
         user_trad = row[11].split("/")[0] if row[11] else ""
         user_clean = row[12].split("/")[0] if row[12] else ""
         user_type = row[13].split("/")[0] if row[13] else ""
-
         user_trad = user_trad[:10]
         user_clean = user_clean[:10]
         user_type = user_type[:10]
-
         cap_num = parse_cap(capitulo)
         if cap_num is None:
             continue
-
         # 🟡 TRAD
         if trad.startswith("ASIGNADO"):
             es_largo = "LARGO" in trad
-
             if es_largo:
                 key = (user_trad, "TRAD", proyecto)
-
                 if key not in largos:
                     largos[key] = {"caps": [], "coors": []}
-
                 largos[key]["caps"].append(cap_num)
                 largos[key]["coors"].append(f"{i+1}E")
-
             else:
                 tabla.append([
                     f"{i+1}E",
@@ -5444,20 +4721,15 @@ async def scan(ctx):
                     proyecto,
                     capitulo
                 ])
-
         # 🔵 CLEAN
         if clean.startswith("ASIGNADO"):
             es_largo = "LARGO" in clean
-
             if es_largo:
                 key = (user_clean, "CLEAN", proyecto)
-
                 if key not in largos:
                     largos[key] = {"caps": [], "coors": []}
-
                 largos[key]["caps"].append(cap_num)
                 largos[key]["coors"].append(f"{i+1}F")
-
             else:
                 tabla.append([
                     f"{i+1}F",
@@ -5466,23 +4738,18 @@ async def scan(ctx):
                     proyecto,
                     capitulo
                 ])
-
         # 🟣 TYPE
         if type_.startswith("ASIGNADO"):
             es_largo = "LARGO" in type_
-
             if es_largo:
                 key = (user_type, "TYPE", proyecto)
-
                 if key not in largos:
                     largos[key] = {
                         "caps": [],
                         "coors": []
                     }
-
                 largos[key]["caps"].append(cap_num)
                 largos[key]["coors"].append(f"{i+1}G")
-
             else:
                 tabla.append([
                     f"{i+1}G",
@@ -5491,10 +4758,8 @@ async def scan(ctx):
                     proyecto,
                     capitulo
                 ])
-
     if not tabla:
         return await ctx.send("✅ No hay asignaciones individuales activas 😌")
-
     # 🔥 ORDEN: TRAD → CLEAN → TYPE → CAP
     orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
     def safe_float(v):
@@ -5503,47 +4768,36 @@ async def scan(ctx):
         except:
             return 0
     tabla.sort(key=lambda x: (orden_rol[x[2].replace("**", "")], safe_float(x[4])))
-
     # calcular ancho columnas
     all_rows = [headers] + tabla
     col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
-
     def make_separator():
         return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
-
     def make_row(row):
         return "| " + " | ".join(str(row[i]).ljust(col_widths[i]) for i in range(len(row))) + " |"
-
     lines = []
     lines.append(make_separator())
     lines.append(make_row(headers))
     lines.append(make_separator())
-
     for row in tabla:
         lines.append(make_row(row))
         lines.append(make_separator())
     texto = "\n".join(lines)
-
     chunks = [texto[i:i+1900] for i in range(0, len(texto), 1900)]
-
     for chunk in chunks:
         await ctx.send(f"```{chunk}```")
-
     def fmt_cap(c):
         try:
             c = float(c)
             return int(c) if c.is_integer() else c
         except:
             return c
-
     await ctx.send(f"✨ Total de asignaciones individuales encontrados: **{len(tabla)}**")
-
 # Comando !scanlist
 @bot.command()
 @rol_permitido("status")
 async def scanlist(ctx):
     await ctx.send("📋 Escaneando asignaciones largas...")
-
     hoja = SHEET_NAME3
     try:
         data = sheet.values().get(
@@ -5552,167 +4806,122 @@ async def scanlist(ctx):
         ).execute()
     except Exception as e:
         return await ctx.send(f"❌ Error leyendo la hoja:\n{e}")
-
     rows = data.get("values", [])
-
     for i in range(len(rows)):
         rows[i] += [""] * (24 - len(rows[i]))
-
     largos = {}
-
     for i in range(1, len(rows)):
         row = rows[i]
-
         proyecto = recortar_proyecto(row[1])[:15]
         capitulo = row[2]
-
         trad = str(row[4]).strip().upper()
         clean = str(row[5]).strip().upper()
         type_ = str(row[6]).strip().upper()
-
         user_trad = row[11].split("/")[0] if row[11] else ""
         user_clean = row[12].split("/")[0] if row[12] else ""
         user_type = row[13].split("/")[0] if row[13] else ""
-
         cap_num = parse_cap(capitulo)
         if cap_num is None:
             continue
-
         # TRAD
         if trad.startswith("ASIGNADO") and "LARGO" in trad:
             key = (user_trad[:10], "TRAD", proyecto)
             coor = f"{i+1}E"
-
             largos.setdefault(key, {"caps": [], "coors": []})
             largos[key]["caps"].append(cap_num)
             largos[key]["coors"].append(coor)
-
         # CLEAN
         if clean.startswith("ASIGNADO") and "LARGO" in clean:
             key = (user_clean[:10], "CLEAN", proyecto)
             coor = f"{i+1}F"
-
             largos.setdefault(key, {"caps": [], "coors": []})
             largos[key]["caps"].append(cap_num)
             largos[key]["coors"].append(coor)
-
         # TYPE
         if type_.startswith("ASIGNADO") and "LARGO" in type_:
             key = (user_type[:10], "TYPE", proyecto)
             coor = f"{i+1}G"
-
             largos.setdefault(key, {"caps": [], "coors": []})
             largos[key]["caps"].append(cap_num)
             largos[key]["coors"].append(coor)
-
     if not largos:
         return await ctx.send("✅ No hay asignaciones largas activas 😌")
-
     def fmt_cap(c):
         return int(c) if float(c).is_integer() else c
-
     # 🧱 Construir tabla
     headers = ["USER", "ROL", "PROYECTO", "RANGO"]
-
     tabla = []
-
     for (user, rol, proyecto), data in largos.items():
         caps = sorted(data["caps"])
         caps_fmt = [fmt_cap(c) for c in caps]
-
         rango = (
             f"{caps_fmt[0]}-{caps_fmt[-1]}"
             if len(caps_fmt) > 1
             else str(caps_fmt[0])
         )
-
         coors = " - ".join(data["coors"])
         coors_line = coors        
-
         tabla.append({
             "main": [user, rol, proyecto, rango],
             "coors": coors_line
         })
-
     # ordenar igual que scan
     orden_rol = {"TRAD": 0, "CLEAN": 1, "TYPE": 2}
     tabla.sort(key=lambda x: (orden_rol[x["main"][1]], x["main"][3]))
-
     # 📏 formato bonito
     all_rows = [headers] + [item["main"] for item in tabla]
     col_widths = [max(len(str(row[i])) for row in all_rows) for i in range(len(headers))]
-
     def make_separator():
         return "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
-
     def make_row(row):
         return "| " + " | ".join(str(row[i]).ljust(col_widths[i]) for i in range(len(row))) + " |"
-
     lines = []
     lines.append(make_separator())
     lines.append(make_row(headers))
     lines.append(make_separator())
-
     for item in tabla:
         main_row = item["main"]
         coors_text = item["coors"]
-
         # fila principal
         lines.append(make_row(main_row))
-
         # fila de coords (ocupa toda la tabla)
         total_width = sum(col_widths) + (3 * len(col_widths)) + 1
         coor_line = "| " + coors_text.center(total_width - 4) + " |"
-
         lines.append(coor_line)
         lines.append(make_separator())
-
     texto = "\n".join(lines)
     chunks = [texto[i:i+1900] for i in range(0, len(texto), 1900)]
-
     for chunk in chunks:
         await ctx.send(f"```{chunk}```")
-
     await ctx.send(f"⚡ Total de asignaciones largas: **{len(tabla)}**")
-    
 # Comando !editar  
 @bot.command()
 @rol_permitido("status")
 async def editar(ctx, *coordenadas):
     if not coordenadas:
         return await ctx.send("❌ Debes enviar al menos una coordenada. Ej: `!editar 577G 602G`")
-
     hoja = SHEET_NAME3
-
     proceso_map = {
         "E": "TRAD",
         "F": "CLEAN",
         "G": "TYPE"
     }
-
     coords = []
     # 🔍 PARSEO DE COORDENADAS
     for c in coordenadas:
         c = c.upper().strip()
-
         match = re.match(r"(\d+)([A-Z])", c)
         if not match:
             return await ctx.send(f"❌ Formato inválido: `{c}` (usa ej: 630E)")
-
         fila = int(match.group(1))
         col = match.group(2)
-
         if col not in proceso_map:
             return await ctx.send(f"❌ Solo se permite E, F o G: `{c}`")
-
         coords.append((fila, col, proceso_map[col]))
-
     proceso = coords[0][2]
-
     # evitar mezclar procesos
     if any(p != proceso for _, _, p in coords):
         return await ctx.send("❌ No puedes mezclar TRAD / CLEAN / TYPE en el mismo batch.")
-
     # 📩 MENÚ
     await ctx.send(
         f"⚙️ **Editar asignación correspondiente a ({len(coords)} filas - {proceso})**\n"
@@ -5722,15 +4931,12 @@ async def editar(ctx, *coordenadas):
         " ⤷ ４ ► Cerrar asignación como completada de forma manual *(se solicitó con método manual)*\n"
         "Responde con `1`, `2`, `3` o `4`"
     )
-
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel
-
     try:
         msg = await bot.wait_for("message", check=check, timeout=60)
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Tiempo agotado.")
-
     opcion = msg.content.strip()
     # ✔ COMPLETAR
     if opcion == "1":
@@ -5742,22 +4948,17 @@ async def editar(ctx, *coordenadas):
                     valueInputOption="RAW",
                     body={"values": [["COMPLETADO"]]}
                 ).execute()
-
             await ctx.send(f"✅ Asignación COMPLETADA correspondiente a *({len(coords)} filas)*")
-
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
     # 🧹 LIMPIAR
     elif opcion == "2":
-
         limpiar_map = {
             "TRAD": ["E", "L", "O", "S", "V", "Y"],
             "CLEAN": ["F", "M", "P", "T", "W", "Y"],
             "TYPE": ["G", "N", "Q", "U", "X", "Y"]
         }
-
         columnas = limpiar_map[proceso]
-
         try:
             for fila, _, _ in coords:
                 for col in columnas:
@@ -5767,25 +4968,19 @@ async def editar(ctx, *coordenadas):
                         valueInputOption="RAW",
                         body={"values": [[""]]}
                     ).execute()
-
             await ctx.send(f"🧹 Asignación LIBERADA correspondiente a *({len(coords)} filas)*")
-
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
     # ⛔ SUSPENDER
     elif opcion == "3":
-
         try:
             limpiar_map = {
                 "TRAD": ["E", "L", "O", "S", "V", "Y"],
                 "CLEAN": ["F", "M", "P", "T", "W", "Y"],
                 "TYPE": ["G", "N", "Q", "U", "X", "Y"]
             }
-
             columnas = limpiar_map[proceso]
-
             for fila, col, _ in coords:
-
                 # marcar RAW mala
                 sheet.values().update(
                     spreadsheetId=SPREADSHEET_ID,
@@ -5793,7 +4988,6 @@ async def editar(ctx, *coordenadas):
                     valueInputOption="RAW",
                     body={"values": [["0 - MALA RAW"]]}
                 ).execute()
-
                 # limpiar todo
                 for c in columnas:
                     sheet.values().update(
@@ -5802,15 +4996,11 @@ async def editar(ctx, *coordenadas):
                         valueInputOption="RAW",
                         body={"values": [[""]]}
                     ).execute()
-
             await ctx.send(f"⛔ RAW SUSPENDIDA por errores correspondiente a *({len(coords)} filas)*")
-            
-
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
     # 🛠 MANUAL
     elif opcion == "4":
-
         try:
             for fila, col, _ in coords:
                 sheet.values().update(
@@ -5819,35 +5009,25 @@ async def editar(ctx, *coordenadas):
                     valueInputOption="RAW",
                     body={"values": [["COMPLETADO (MANUAL)"]]}
                 ).execute()
-
             await ctx.send(f"🛠 Asignación COMPLETADA MANUALMENTE correspondiente a *({len(coords)} filas)*")
-
         except Exception as e:
             await ctx.send(f"❌ Error:\n{e}")
-
     else:
         await ctx.send("❌ Opción inválida.")
-
 # Comando !asset
 @bot.command()
 @canal_permitido("asset")
 async def asset(ctx):
     global last_assign_time
-
     if not await check_assign_cooldown(ctx):
         return
     if await verificar_bloqueo_largo(ctx):
         return
     async with assign_lock:
         last_assign_time = time.time()
-
         print(f"[ASSET] solicitado por {ctx.author.id}")
-
-        # =========================
         # 🎯 DETECTAR OPCIONES POR ROL
-        # =========================
         opciones = []
-
         if tiene_rol(ctx, ["tr_kr_"]):
             opciones.append(("**TR-KR**", "TRAD", 1))
         if tiene_rol(ctx, ["tr_ing_"]):
@@ -5858,33 +5038,24 @@ async def asset(ctx):
             opciones.append(("**TR-ING-MANGA**", "TRAD", 4))
         if tiene_rol(ctx, ["tr_jap_"]):
             opciones.append(("**TR-JAP**", "TRAD", 5))
-
         if tiene_rol(ctx, ["cl_"]):
             opciones.append(("**CL**", "CLEAN", 1))
         if tiene_rol(ctx, ["cl_manga_"]):
             opciones.append(("**CL-MANGA**", "CLEAN", 2))
-
         if tiene_rol(ctx, ["ed_"]):
             opciones.append(("**ED**", "TYPE", 1))
         if tiene_rol(ctx, ["ed_manga_"]):
             opciones.append(("**ED-MANGA**", "TYPE", 2))
-
         if not opciones:
             return await ctx.send("🚫 No tienes roles válidos para asignaciones largas, amor.")
-
-        # =========================
         # 📩 MENÚ
-        # =========================
         texto = "🌸 **Tus roles disponibles para asignaciones largas:**\n"
         for i, op in enumerate(opciones, start=1):
             texto += f"{i} - {op[0]}\n"
-
         texto += "\nResponde con el número de la opción:"
         await ctx.send(texto)
-
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
-
         try:
             msg = await bot.wait_for("message", check=check, timeout=60)
             seleccion = int(msg.content.strip())
@@ -5892,41 +5063,29 @@ async def asset(ctx):
                 raise ValueError
         except:
             return await ctx.send("❌ Opción inválida, cielito.")
-
         opcion = opciones[seleccion - 1]
         tipo_op, proceso, variante = opcion
-
         hoja = SHEET_NAME3
-
         # 📥 LEER SHEET
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{hoja}!A:Y"
         ).execute()
-
         rows = data.get("values", [])
-
         for i in range(len(rows)):
             rows[i] += [""] * (25 - len(rows[i]))
-
         # 🔍 FILTRAR POR PROYECTO
         proyectos = {}
-
         for i in range(1, len(rows)):
             row = rows[i]
-
             proyecto = row[1]
             capitulo = row[2]
             raw = str(row[3]).strip()
-
             trad = str(row[4]).strip()
             clean = str(row[5]).strip()
             type_ = str(row[6]).strip()
-
             proyecto_nombre = str(proyecto).lower()
-
             cumple = False
-
             # 🔁 REUTILIZAR LÓGICA
             if proceso == "TRAD":
                 idioma_map = {
@@ -5938,88 +5097,65 @@ async def asset(ctx):
                 }
                 idioma_index = idioma_map.get(variante)
                 idioma_flag = str(row[idioma_index - 1]).strip()
-
                 if variante == 4 and "manga" not in proyecto_nombre:
                     continue
-
                 if raw == "1" and trad == "" and idioma_flag == "1":
                     cumple = True
-
             elif proceso == "CLEAN":
                 if variante == 1 and "manga" in proyecto_nombre:
                     continue
                 if variante == 2 and "manga" not in proyecto_nombre:
                     continue
-
                 if raw == "1" and clean == "":
                     cumple = True
-
             elif proceso == "TYPE":
                 def completo(v):
                     return str(v).startswith("COMPLETADO")
-
                 if variante == 1 and "manga" in proyecto_nombre:
                     continue
                 if variante == 2 and "manga" not in proyecto_nombre:
                     continue
-
                 if raw == "1" and completo(trad) and completo(clean) and not type_:
                     cumple = True
-
             if cumple:
                 if proyecto not in proyectos:
                     proyectos[proyecto] = []
                 proyectos[proyecto].append((i, row))
-
         # 🎯 BUSCAR PROYECTO CON 5+
         proyecto_valido = None
-
         for nombre, caps in proyectos.items():
             if len(caps) >= 5:
                 proyecto_valido = nombre
                 break
-
         if not proyecto_valido:
             return await ctx.send("😔 No hay proyectos con al menos 5 capítulos disponibles, amor.")
-
         seleccion_caps = proyectos[proyecto_valido][:5]
-        
         # 🔗 CONVERTIR A MENCIÓN SI ES CANAL
         proyecto_mostrar = proyecto_valido
-
         if proyecto_valido.startswith("#"):
             nombre_canal = proyecto_valido[1:]
             canal_discord = discord.utils.get(ctx.guild.channels, name=nombre_canal)
             if canal_discord:
                 proyecto_mostrar = canal_discord.mention
-
         # 🧾 MENSAJE FINAL
         mensaje = f"📦 <@{ctx.author.id}>, tu **asignación larga** es:\n"
-
         for idx, (_, row) in enumerate(seleccion_caps):
             letra = chr(65 + idx)
             cap = row[2]
             mensaje += f" *{letra}.* **CH. {cap}** -- {proyecto_mostrar}\n"
-
         mensaje += f" > ⏳ Tienes **4 días** para completar esta asignación."
-
         await ctx.send(mensaje)
-
         # 📝 ESCRIBIR EN SHEET
         batch_id = str(ctx.author.id)
         valor = f"ASIGNADO LARGO | {batch_id}"
-
         col_map = {
             "TRAD": ("E", "L"),
             "CLEAN": ("F", "M"),
             "TYPE": ("G", "N")
         }
-
         col_estado, col_user = col_map[proceso]
-
         for fila_index, row in seleccion_caps:
             fila_real = fila_index+1
-
             # Estado
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
@@ -6027,7 +5163,6 @@ async def asset(ctx):
                 valueInputOption="RAW",
                 body={"values": [[valor]]}
             ).execute()
-
             # Usuario
             usuario_guardado = f"{ctx.author.name} / {ctx.author.id}"
             sheet.values().update(
@@ -6036,95 +5171,67 @@ async def asset(ctx):
                 valueInputOption="RAW",
                 body={"values": [[usuario_guardado]]}
             ).execute()
-
 # Comando !calendar    
 @bot.command(name="calendar")
 async def calendar_cmd(ctx):
-
     await revisar_calendario()
     await ctx.send("### 🌸 Revisión de calendario completada.")
-
 async def revisar_calendario():
-
     try:
         result = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME2}!B:H"
         ).execute()
-
         rows = result.get("values", [])
-
     except Exception as e:
         print(f"❌ Error leyendo calendario: {e}")
         return
-
     canal_alertas = bot.get_channel(1504718483148116039)
-
     if not canal_alertas:
         print("❌ No se encontró el canal de alertas.")
         return
-
     hoy = datetime.now().date()
-
     print("📅 Revisando calendario de RAWs...")
-
     mensajes = []
-
     for idx, row in enumerate(rows, start=1):
-
         try:
             row += [""] * 10
-
             nombre_proyecto = row[0].strip()
             fecha_base_str = row[5].strip()
             ciclo_str = row[6].strip()
-
             if not nombre_proyecto or not fecha_base_str or not ciclo_str:
                 continue
-
             fecha_base = datetime.strptime(
                 fecha_base_str,
                 "%d/%m/%Y"
             ).date()
-
             ciclo_m = int(ciclo_str)
             ciclo = int(ciclo_str)
-            
             dias_pasados = (hoy - fecha_base).days
-
             if dias_pasados < 0:
                 continue
-
             if dias_pasados % ciclo == 0:
-
                 canal_proyecto = discord.utils.get(
                     bot.get_all_channels(),
                     name=nombre_proyecto.replace("#", "").lower()
                 )
-
                 if canal_proyecto:
                     nombre = canal_proyecto.mention
                 else:
                     nombre = f"#{nombre_proyecto}"
-
                 mensajes.append(
                     f"📢 ¡El proyecto {nombre} ha sido actualizado en su RAW original!\n"
                     f"> 🗓️ *Actualiza cada {ciclo_m} días.*\n"
                     "━━━━━━━━━━━━━━━━━"
                 )
-
         except Exception as e:
             print(f"❌ Error en fila {idx}: {e}")
-
     # 🔥 ENVIAR TODO JUNTO
     if mensajes:
-
         final_msg = (
             "# **¡Actualización de RAWS!**\n\n"
             + "\n".join(mensajes)
         )
-
         await canal_alertas.send(final_msg)
-
 # Ejecutar bot
 bot.run(TOKEN)
