@@ -10,7 +10,7 @@ from google.auth.transport.requests import Request
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from typing import Optional, Dict, Any, List
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, quote
 from discord.ext import commands, tasks
 from googleapiclient.errors import HttpError
 import traceback
@@ -21,6 +21,8 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import CreateForumTopicRequest
 from telethon.tl.types import MessageService, MessageActionTopicCreate
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from concurrent.futures import ThreadPoolExecutor
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -30,6 +32,66 @@ GUILD_IDS = [int(x.strip()) for x in os.getenv("GUILD_IDS", "").split(",") if x.
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+CATH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="Catharsis"
+)
+
+_cath_pw = None
+_cath_browser = None
+_cath_page = None
+
+
+def obtener_pagina_cath():
+    """
+    Mantiene un único navegador y una única pestaña para Catharsis.
+
+    IMPORTANTE:
+    Esta función debe ejecutarse siempre desde CATH_EXECUTOR,
+    para que Playwright trabaje desde el mismo hilo.
+    """
+    global _cath_pw, _cath_browser, _cath_page
+
+    navegador_conectado = False
+
+    if _cath_browser is not None:
+        try:
+            navegador_conectado = _cath_browser.is_connected()
+        except Exception:
+            navegador_conectado = False
+
+    # Si el navegador se cerró o se desconectó, reconstruirlo.
+    if not navegador_conectado:
+        if _cath_browser is not None:
+            try:
+                _cath_browser.close()
+            except Exception:
+                pass
+
+        _cath_browser = None
+        _cath_page = None
+
+        if _cath_pw is not None:
+            try:
+                _cath_pw.stop()
+            except Exception:
+                pass
+
+            _cath_pw = None
+
+        _cath_pw = sync_playwright().start()
+        _cath_browser = _cath_pw.chromium.launch(headless=True)
+        _cath_page = _cath_browser.new_page()
+
+        print("🌸 CATHARSIS: navegador persistente iniciado.")
+
+    # Si solo se cerró la pestaña, crear otra en el mismo navegador.
+    elif _cath_page is None or _cath_page.is_closed():
+        _cath_page = _cath_browser.new_page()
+        print("🌸 CATHARSIS: pestaña reconstruida.")
+
+    return _cath_page
 
 # - SISTEMA DE PERMISOS
 CANALES_COMANDOS = {
@@ -1056,42 +1118,21 @@ def evento_lec(url, preestreno=False, retries=3, delay=5):
 
     return "❌ No se pudo acceder a Lector después de varios intentos."
 def evento_cath(url, preestreno=False, retries=3, delay=5):
-    """
-    Consulta NewCatharsis mediante su API.
-    Flujo:
-        Link antiguo/nuevo
-            ↓
-        Lobotomía si corresponde
-            ↓
-        Extraer slug
-            ↓
-        GET /api/mangas/{slug}
-            ↓
-        Obtener número y fecha del último capítulo
-            ↓
-        Convertir fecha → "X días atrás"
-    La fecha corresponde a la fecha de creación
-    del último capítulo.
-    """
     if not url:
         return "❌ No se proporcionó un enlace de Catharsis."
 
-    # 🧠 Convertir enlace viejo → enlace nuevo
+    # ------------------------------------------------------
+    # 1. NORMALIZAR EL ENLACE
+    # ------------------------------------------------------
     if LOBOTOMIA == 1:
         url = lobotomizar_cath_link(url)
 
     print(f"🔎 Catharsis → consultando: {url}")
 
-    # ==========================================================
-    # 1. EXTRAER SLUG
-    # ==========================================================
-
     try:
         parsed = urlparse(url)
         path = parsed.path.strip("/")
 
-        # Esperamos:
-        # /manga/slug
         if not path.startswith("manga/"):
             return "❌ El enlace de Catharsis no tiene un formato válido."
 
@@ -1100,274 +1141,228 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         if not slug:
             return "❌ No se pudo obtener el slug del manga."
 
+        slug = quote(slug, safe="-_")
+
     except Exception as e:
-        print(
-            f"⚠️ Catharsis → "
-            f"error obteniendo slug: {e}"
-        )
+        print(f"⚠️ Catharsis → error obteniendo slug: {e}")
         return "❌ No se pudo interpretar el enlace de Catharsis."
 
-    # ==========================================================
-    # 2. CONSTRUIR API
-    # ==========================================================
+    base_url = "https://newcatharsis.dig-it.info"
+    api_url = f"{base_url}/api/mangas/{slug}"
+    page_url = f"{base_url}/manga/{slug}"
 
-    api_url = (
-        f"https://newcatharsis.dig-it.info/api/mangas/{slug}"
-    )
-
-    print(f"📡 Catharsis → API: {api_url}")
-
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/151.0.0.0 Safari/537.36 OPR/135.0.0.0"
-        ),
-        "system": "catharsis",
-        "x-fk-sistema": "3",
-        "x-api-key": CATH_API_KEY,
-    }
-
-    # ==========================================================
-    # 3. CONSULTAR API
-    # ==========================================================
+    print(f"🌐 Catharsis → página: {page_url}")
+    print(f"📡 Catharsis → API esperada: {api_url}")
+    # ------------------------------------------------------
+    # 2. CONSULTAR MEDIANTE EL NAVEGADOR PERSISTENTE
+    # ------------------------------------------------------
+    data = None
 
     for intento in range(1, retries + 1):
-
         try:
-
             print(
                 f"🔎 Catharsis → intento "
                 f"{intento}/{retries}"
             )
 
-            response = requests.get(
-                api_url,
-                headers=headers,
-                timeout=20
-            )
+            # 💖 Reutilizar el navegador y la pestaña existentes.
+            page = obtener_pagina_cath()
+
+            # Escuchar la respuesta de la API mientras navegamos.
+            with page.expect_response(
+                lambda r: r.url.startswith(api_url),
+                timeout=20000
+            ) as respuesta:
+                page.goto(
+                    page_url,
+                    wait_until="domcontentloaded",
+                    timeout=20000
+                )
+
+            response = respuesta.value
 
             print(
                 f"📡 Catharsis → HTTP "
-                f"{response.status_code}"
+                f"{response.status}"
             )
 
-            response.raise_for_status()
+            if response.status == 404:
+                return (
+                    "❌ El manga no existe en Catharsis "
+                    "(HTTP 404)."
+                )
+
+            if response.status != 200:
+                raise RuntimeError(
+                    f"La API respondió HTTP {response.status}"
+                )
 
             data = response.json()
 
-            # ==================================================
-            # 4. OBTENER DATOS
-            # ==================================================
+            # Consulta completada: no cerrar navegador ni pestaña.
+            break
 
-            total_capitulos = data.get("n_capitulos")
-            capitulos = data.get("capitulos") or []
-
-            if total_capitulos is None:
-                print(
-                    "⚠️ Catharsis → "
-                    "la API no devolvió n_capitulos."
-                )
-
-                return (
-                    "❌ Catharsis respondió, "
-                    "pero no devolvió el total de capítulos."
-                )
-
-            if not capitulos:
-                print(
-                    "⚠️ Catharsis → "
-                    "la API no devolvió capítulos."
-                )
-
-                return (
-                    "❌ Catharsis respondió, "
-                    "pero no devolvió la lista de capítulos."
-                )
-
-            # ==================================================
-            # 5. BUSCAR EL CAPÍTULO MÁS ALTO
-            # ==================================================
-
-            def numero_capitulo(cap):
-
-                try:
-                    return float(
-                        str(
-                            cap.get("numero", 0)
-                        ).replace(",", ".")
-                    )
-
-                except Exception:
-                    return 0
-
-            ultimo_capitulo = max(
-                capitulos,
-                key=numero_capitulo
-            )
-
-            numero = ultimo_capitulo.get("numero")
-            fecha_raw = ultimo_capitulo.get("date_created")
-
+        except PlaywrightTimeoutError as e:
             print(
-                f"📚 Catharsis → "
-                f"capítulo encontrado: {numero}"
-            )
-
-            print(
-                f"📅 Catharsis → "
-                f"fecha encontrada: {fecha_raw}"
-            )
-
-            # ==================================================
-            # 6. PREESTRENO
-            # ==================================================
-
-            if preestreno:
-
-                try:
-
-                    numero_float = float(
-                        str(numero).replace(",", ".")
-                    )
-
-                    if numero_float > 0:
-                        numero_float -= 1
-
-                    if numero_float.is_integer():
-                        numero = str(
-                            int(numero_float)
-                        )
-                    else:
-                        numero = str(
-                            numero_float
-                        )
-
-                    print(
-                        f"🧪 Catharsis → "
-                        f"preestreno activado: {numero}"
-                    )
-
-                except Exception as e:
-
-                    print(
-                        f"⚠️ Catharsis → "
-                        f"no se pudo aplicar preestreno: {e}"
-                    )
-
-            # ==================================================
-            # 7. CONVERTIR FECHA → DÍAS ATRÁS
-            # ==================================================
-
-            fecha = "N/D"
-
-            if fecha_raw:
-
-                try:
-
-                    fecha_obj = datetime.fromisoformat(
-                        fecha_raw.replace("Z", "+00:00")
-                    )
-
-                    # --------------------------------------------------
-                    # Convertimos la fecha ISO de la API al mismo
-                    # formato que entiende fecha_a_dias_atras()
-                    # --------------------------------------------------
-
-                    fecha_formateada = fecha_obj.strftime(
-                        "%d/%m/%Y"
-                    )
-
-                    fecha = fecha_a_dias_atras(
-                        fecha_formateada
-                    )
-
-                    print(
-                        f"📅 Catharsis → "
-                        f"fecha normalizada: {fecha_formateada}"
-                    )
-
-                    print(
-                        f"🕐 Catharsis → "
-                        f"antigüedad: {fecha}"
-                    )
-
-                except Exception as e:
-
-                    print(
-                        f"⚠️ Catharsis → "
-                        f"error convirtiendo fecha: {e}"
-                    )
-
-                    fecha = "N/D"
-
-            # ==================================================
-            # 8. RESULTADO FINAL
-            # ==================================================
-
-            print(
-                f"✅ Catharsis → "
-                f"Capítulo: {numero} | "
-                f"Fecha: {fecha}"
-            )
-
-            return (
-                f"CATHARSIS\n"
-                f"> Capítulo: {numero}\n"
-                f"> Actualizado: {fecha}"
-            )
-
-        # ======================================================
-        # ERROR HTTP
-        # ======================================================
-
-        except requests.RequestException as e:
-
-            print(
-                f"⚠️ Catharsis → "
-                f"error HTTP "
+                f"⚠️ Catharsis → tiempo agotado "
                 f"(intento {intento}/{retries}): {e}"
             )
-
-        # ======================================================
-        # JSON INVÁLIDO
-        # ======================================================
-
-        except ValueError as e:
-
-            print(
-                f"⚠️ Catharsis → "
-                f"respuesta JSON inválida: {e}"
-            )
-
-            return (
-                "❌ Catharsis respondió, "
-                "pero la respuesta no es un JSON válido."
-            )
-
-        # ======================================================
-        # ERROR INESPERADO
-        # ======================================================
 
         except Exception as e:
-
             print(
-                f"⚠️ Catharsis → "
-                f"error inesperado "
+                f"⚠️ Catharsis → error "
                 f"(intento {intento}/{retries}): {e}"
             )
-
-        # ======================================================
-        # REINTENTO
-        # ======================================================
 
         if intento < retries:
             time.sleep(delay)
 
+    if data is None:
+        return (
+            "❌ No se pudo acceder a Catharsis "
+            "después de varios intentos."
+        )
+    # ------------------------------------------------------
+    # 3. VALIDAR LOS DATOS
+    # ------------------------------------------------------
+    total_capitulos = data.get("n_capitulos")
+    capitulos = data.get("capitulos") or []
+
+    if total_capitulos is None:
+        print("⚠️ Catharsis → falta n_capitulos.")
+        return (
+            "❌ Catharsis respondió, "
+            "pero no devolvió el total de capítulos."
+        )
+
+    if not capitulos:
+        print("⚠️ Catharsis → no hay capítulos.")
+        return (
+            "❌ Catharsis respondió, "
+            "pero no devolvió la lista de capítulos."
+        )
+
+    # ------------------------------------------------------
+    # 4. ELEGIR EL CAPÍTULO CON EL NÚMERO MÁS ALTO
+    # No se usa la fecha para decidir cuál es el último.
+    # ------------------------------------------------------
+    from decimal import Decimal, InvalidOperation
+
+    def convertir_numero(cap):
+        numero = cap.get("numero")
+
+        if numero is None:
+            return None
+
+        try:
+            return Decimal(
+                str(numero).strip().replace(",", ".")
+            )
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    capitulos_validos = [
+        cap for cap in capitulos
+        if convertir_numero(cap) is not None
+    ]
+
+    if not capitulos_validos:
+        print(
+            "⚠️ Catharsis → ningún capítulo tiene "
+            "un número válido."
+        )
+        return "❌ No se encontraron números de capítulo válidos."
+
+    ultimo_capitulo = max(
+        capitulos_validos,
+        key=convertir_numero
+    )
+
+    numero = ultimo_capitulo.get("numero")
+
+    fecha_raw = (
+        ultimo_capitulo.get("fecha_publicacion")
+        or ultimo_capitulo.get("date_created")
+        or ""
+    )
+
+    print(
+        f"📚 Catharsis → capítulo con número más alto: "
+        f"{numero}"
+    )
+    print(
+        f"🆔 Catharsis → ID del capítulo: "
+        f"{ultimo_capitulo.get('id', 'N/D')}"
+    )
+    print(f"📅 Catharsis → fecha original: {fecha_raw}")
+
+    # ------------------------------------------------------
+    # 5. APLICAR PREESTRENO
+    # Conservamos el comportamiento anterior del bot.
+    # ------------------------------------------------------
+    if preestreno:
+        try:
+            numero_decimal = Decimal(
+                str(numero).replace(",", ".")
+            )
+
+            if numero_decimal > 0:
+                numero_decimal -= Decimal("1")
+
+            if numero_decimal == numero_decimal.to_integral_value():
+                numero = str(int(numero_decimal))
+            else:
+                numero = str(numero_decimal)
+
+            print(
+                f"🧪 Catharsis → preestreno activado: {numero}"
+            )
+
+        except (InvalidOperation, ValueError, TypeError) as e:
+            print(
+                f"⚠️ Catharsis → no se pudo aplicar "
+                f"preestreno: {e}"
+            )
+
+    # ------------------------------------------------------
+    # 6. CONVERTIR FECHA A DÍAS ATRÁS
+    # La fecha corresponde al capítulo seleccionado.
+    # ------------------------------------------------------
+    fecha = "N/D"
+
+    if fecha_raw:
+        try:
+            fecha_obj = datetime.fromisoformat(
+                str(fecha_raw).replace("Z", "+00:00")
+            )
+
+            fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
+
+            fecha = fecha_a_dias_atras(fecha_formateada)
+
+            print(
+                f"📅 Catharsis → fecha normalizada: "
+                f"{fecha_formateada}"
+            )
+            print(f"🕐 Catharsis → antigüedad: {fecha}")
+
+        except Exception as e:
+            print(
+                f"⚠️ Catharsis → error convirtiendo fecha: {e}"
+            )
+
+    # ------------------------------------------------------
+    # 7. DEVOLVER EL FORMATO QUE ESPERA !sitio
+    # ------------------------------------------------------
+    print(
+        f"✅ Catharsis → capítulo: {numero} | "
+        f"actualizado: {fecha}"
+    )
+
     return (
-        "❌ No se pudo acceder a Catharsis "
-        "después de varios intentos."
+        f"CATHARSIS\n"
+        f"> Capítulo: {numero}\n"
+        f"> Actualizado: {fecha}"
     )
 def evento_capi(url, retries=3, delay=5):
     headers = {
@@ -2882,7 +2877,8 @@ async def sitio(ctx):
     task_map = {}  # para saber qué resultado pertenece a qué sitio
     # --- CATHARSIS ---
     if pins_data["LINK_CATH"]:
-        tasks.append(asyncio.to_thread(evento_cath, pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
+        loop = asyncio.get_running_loop()
+        tasks.append(loop.run_in_executor(CATH_EXECUTOR,evento_cath,pins_data["LINK_CATH"], pins_data.get("PRE_CATH", False)))
         task_map[len(tasks)-1] = "catharsis"
     else:
         task_map["catharsis"] = "ND"
