@@ -1365,151 +1365,246 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         f"> Actualizado: {fecha}"
     )
 def evento_capi(url, retries=3, delay=5):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/142.0.0.0 Safari/537.36",
+    headers_web = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/142.0.0.0 Safari/537.36"
+        ),
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": "https://capibaratraductor.com/"
     }
 
+    api_key = CAPI_API_KEY.strip()
+
+    if not api_key:
+        print("❌ CAPIBARA: falta CAPI_API_KEY.")
+        return "❌ Falta la API key de CAPIBARA."
+
+    # ------------------------------------------------------
+    # EXTRAER SLUG DE LA URL
+    # Acepta /breakscan/manga/slug y /red/breakscan/manga/slug
+    # ------------------------------------------------------
+    try:
+        parsed_url = urlparse(url)
+
+        if parsed_url.hostname != "capibaratraductor.com":
+            return "❌ El enlace no pertenece a CAPIBARA."
+
+        partes = [
+            parte for parte in parsed_url.path.split("/")
+            if parte
+        ]
+
+        if "manga" not in partes:
+            return "❌ No se encontró la ruta del manga en CAPIBARA."
+
+        indice_manga = partes.index("manga")
+
+        if indice_manga + 1 >= len(partes):
+            return "❌ No se encontró el slug de la obra."
+
+        slug_url = partes[indice_manga + 1]
+
+    except Exception as e:
+        print(f"⚠️ CAPIBARA: error interpretando el enlace: {e}")
+        return "❌ No se pudo interpretar el enlace de CAPIBARA."
+
+    # ------------------------------------------------------
+    # CONSULTA Y REINTENTOS
+    # ------------------------------------------------------
     for intento in range(1, retries + 1):
         try:
-            session = requests.Session()
+            with requests.Session() as session:
 
-            # Cookie de verificación NSFW
-            session.cookies.set(
-                "nsfw",
-                "1",
-                domain="capibaratraductor.com",
-                path="/"
-            )
+                session.headers.update(headers_web)
 
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=20
-            )
-
-            response.raise_for_status()
-            response.encoding = "utf-8"
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            # BUSCAR TODOS LOS BLOQUES DE CAPÍTULOS
-            bloques = soup.select("a[href*='/chapters/']")
-
-            if not bloques:
-                print("⚠️ CAPIBARA: No se encontraron bloques de capítulos.")
-                return "❌ No se encontraron capítulos en CAPIBARA."
-            # BUSCAR EL CAPÍTULO MÁS ALTO
-            mejor_bloque = None
-            mejor_capitulo = -1
-
-            for bloque in bloques:
-
-                texto_bloque = bloque.get_text(" ", strip=True)
-
-                match = re.search(
-                    r'cap[ií]tulo\s*(\d+)',
-                    texto_bloque,
-                    re.I
+                # Se conserva la cookie que usaba la función anterior.
+                session.cookies.set(
+                    "nsfw",
+                    "1",
+                    domain="capibaratraductor.com",
+                    path="/"
                 )
 
-                if match:
-                    cap_num = int(match.group(1))
+                # ------------------------------------------
+                # 1. DESCARGAR LA PÁGINA Y EXTRAER EL ID
+                # ------------------------------------------
+                page_response = session.get(
+                    url,
+                    timeout=20
+                )
+                page_response.raise_for_status()
 
-                    if cap_num > mejor_capitulo:
-                        mejor_capitulo = cap_num
-                        mejor_bloque = bloque
+                # Buscamos el atributo props que contiene manga.
+                props_match = re.search(
+                    r'\bprops\s*=\s*"([^"]*&quot;manga&quot;[^"]*)"',
+                    page_response.text,
+                    re.IGNORECASE
+                )
 
-            if not mejor_bloque:
-                print("⚠️ CAPIBARA: Se encontraron bloques, pero no se pudo identificar ningún capítulo.")
-                return "❌ No se pudo identificar el capítulo en CAPIBARA."
-            # TEXTO COMPLETO DEL BLOQUE
-            texto_bloque = mejor_bloque.get_text(
-                " ",
-                strip=True
-            )
-            # CAPÍTULO
-            cap_match = re.search(
-                r'cap[ií]tulo\s*(\d+)',
-                texto_bloque,
-                re.I
-            )
+                if not props_match:
+                    raise ValueError(
+                        "No se encontró el atributo props con los datos del manga."
+                    )
 
-            if cap_match:
-                cap = cap_match.group(1)
-            else:
-                cap = "Desconocido"
-            # FECHA
-            # Primero intentamos encontrar "hace X ..."
-            fecha_match = re.search(
-                r'\bhace\s+(.+?)(?="|\s*Capítulo|\s*Compartir|\s*Leer|$)',
-                texto_bloque,
-                re.I
-            )
+                props_text = props_match.group(1)
 
-            if fecha_match:
-                fecha_text = fecha_match.group(1).strip()
-            else:
-                # Fallback: buscar directamente el span que contiene "hace"
-                fecha_text = "Desconocido"
+                # Patrón verificado con las obras de prueba:
+                # &quot;manga&quot;:[0,{&quot;id&quot;:[0,2769]
+                id_match = re.search(
+                    r'&quot;manga&quot;\s*:\s*\[\s*0\s*,\s*\{'
+                    r'.*?&quot;id&quot;\s*:\s*\[\s*0\s*,\s*(\d+)',
+                    props_text,
+                    re.DOTALL
+                )
 
-                for span in mejor_bloque.find_all("span"):
-                    texto_span = span.get_text(" ", strip=True)
+                if not id_match:
+                    raise ValueError(
+                        "Se encontró props, pero no se pudo extraer el ID."
+                    )
 
-                    if re.search(r'\bhace\s+', texto_span, re.I):
-                        fecha_text = texto_span.strip()
-                        break
-            # NORMALIZAR FECHA
-            fecha_text = fecha_text.replace("hace ", "").strip()
+                manga_id = int(id_match.group(1))
 
-            fecha_text = (
-                fecha_text
-                .replace("hours", "horas")
-                .replace("hour", "hora")
-                .replace("days", "días")
-                .replace("day", "día")
-                .replace("minutes", "minutos")
-                .replace("minute", "minuto")
-                .replace("months", "meses")
-                .replace("month", "mes")
-            )
-
-            fecha_text = fecha_a_dias_atras(fecha_text)
-            return (
-                f"CAPIBARA\n"
-                f"> Capítulo: {cap}\n"
-                f"> Actualizado: {fecha_text}"
-            )
-
-        except requests.exceptions.HTTPError as e:
-
-            if response.status_code in [503, 429, 520]:
                 print(
-                    f"⚠️ CAPIBARA intento "
-                    f"{intento}/{retries}: "
-                    f"{response.status_code} recibido, "
-                    f"reintentando en {delay}s..."
+                    f"🔎 CAPIBARA: slug={slug_url}, "
+                    f"ID extraído={manga_id}"
                 )
 
+                # ------------------------------------------
+                # 2. CONSULTAR LA API OFICIAL
+                # ------------------------------------------
+                api_response = session.get(
+                    f"https://capibaratraductor.com/api/v1/works/{manga_id}",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Accept": "application/json"
+                    },
+                    timeout=20
+                )
+
+                api_response.raise_for_status()
+                resultado = api_response.json()
+
+                if not resultado.get("status"):
+                    raise ValueError(
+                        "La API respondió con error: "
+                        + str(resultado.get("message", resultado))
+                    )
+
+                obra = resultado.get("data")
+
+                if not isinstance(obra, dict):
+                    raise ValueError(
+                        "La API no devolvió los datos esperados de la obra."
+                    )
+
+                # ------------------------------------------
+                # 3. VALIDAR QUE SEA LA OBRA CORRECTA
+                # ------------------------------------------
+                id_api = obra.get("id")
+                slug_api = obra.get("slug")
+
+                if id_api != manga_id:
+                    raise ValueError(
+                        f"El ID de la API ({id_api}) no coincide "
+                        f"con el ID extraído ({manga_id})."
+                    )
+
+                if slug_api != slug_url:
+                    raise ValueError(
+                        f"El slug de la API ({slug_api}) no coincide "
+                        f"con el slug del enlace ({slug_url})."
+                    )
+
+                # ------------------------------------------
+                # 4. OBTENER CAPÍTULOS
+                # ------------------------------------------
+                capitulos = obra.get("chapters")
+
+                if capitulos is None:
+                    raise ValueError(
+                        "La API no devolvió el número de capítulos."
+                    )
+
+                # ------------------------------------------
+                # 5. CALCULAR DÍAS DESDE LA ACTUALIZACIÓN
+                # ------------------------------------------
+                ultima_actualizacion = obra.get("lastChapterAt")
+
+                if ultima_actualizacion:
+                    fecha_dt = datetime.fromisoformat(
+                        ultima_actualizacion.replace("Z", "+00:00")
+                    )
+
+                    ahora = datetime.now(fecha_dt.tzinfo)
+                    dias = (ahora.date() - fecha_dt.date()).days
+
+                    if dias == 1:
+                        fecha_texto = "1 día atrás"
+                    else:
+                        fecha_texto = f"{dias} días atrás"
+                else:
+                    fecha_texto = "Desconocido"
+
+                print(
+                    f"✅ CAPIBARA: {obra.get('title')} | "
+                    f"Capítulos: {capitulos} | "
+                    f"Actualizado: {fecha_texto}"
+                )
+
+                # Conservamos el formato que utiliza !sit.
+                return (
+                    f"CAPIBARA\n"
+                    f"> Capítulo: {capitulos}\n"
+                    f"> Actualizado: {fecha_texto}"
+                )
+
+        except requests.HTTPError as e:
+            codigo = (
+                e.response.status_code
+                if e.response is not None
+                else None
+            )
+
+            if codigo in (429, 503, 520) and intento < retries:
+                print(
+                    f"⚠️ CAPIBARA intento {intento}/{retries}: "
+                    f"HTTP {codigo}; reintentando en {delay}s..."
+                )
                 time.sleep(delay)
                 continue
 
-            return f"❌ Error HTTP: {e}"
+            print(f"❌ CAPIBARA: error HTTP: {e}")
+            return f"❌ Error HTTP en CAPIBARA: {codigo}"
 
-        except Exception as e:
-
+        except (requests.RequestException, ValueError, KeyError) as e:
             print(
-                f"⚠️ CAPIBARA intento "
-                f"{intento}/{retries} falló: {e}"
+                f"⚠️ CAPIBARA intento {intento}/{retries}: {e}"
             )
 
-            time.sleep(delay)
-            continue
+            if intento < retries:
+                time.sleep(delay)
+                continue
 
-    return "❌ No se pudo acceder a CAPIBARA después de varios intentos."
-    
+            return (
+                "❌ No se pudo consultar CAPIBARA "
+                "después de varios intentos."
+            )
+
+        except Exception as e:
+            print(
+                f"⚠️ CAPIBARA: error inesperado "
+                f"en intento {intento}/{retries}: {e}"
+            )
+
+            if intento < retries:
+                time.sleep(delay)
+                continue
+
+            return "❌ Error inesperado al consultar CAPIBARA."
+
+    return "❌ No se pudo consultar CAPIBARA."
 def fecha_a_dias_atras(fecha_str):
     fecha_str = fecha_str.strip().lower()
 
