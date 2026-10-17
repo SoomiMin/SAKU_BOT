@@ -146,6 +146,7 @@ TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
 TELEGRAM_SESSION = os.getenv("TELEGRAM_SESSION")
 CATH_API_KEY = os.getenv("CATH_API_KEY", "")
+CAPI_API_KEY = os.getenv("CAPI_API_KEY", "")
 ultimo_calendario_run = None
 
 # — Crear credenciales de servicio
