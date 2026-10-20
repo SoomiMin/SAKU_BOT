@@ -335,34 +335,55 @@ async def on_reaction_add(reaction, user):
                 body={"values": [[""]]}
             ).execute()
             # Editar mensaje original
+
+            # 💖 Editado por Rami: mensaje compacto al completar
             try:
-                contenido = reaction.message.content.split("\n")[0]
+                lineas = reaction.message.content.splitlines()
+
+                # Conservar encabezado y proyecto
+                encabezado = lineas[0] if lineas else ""
+                proyecto = lineas[1] if len(lineas) > 1 else ""
+
                 if proceso == "TYPE":
                     column_map = {
                         "TRAD": ("E", "O", "C"),
                         "CLEAN": ("F", "P", "C"),
                         "TYPE": ("G", "Q", "C"),
                     }
+
                     status_col, id_col, cap_col = column_map[proceso]
-                    data = sheet.values().get(range=f"{hoja}!{id_col}:{cap_col}").execute()
+
+                    data = sheet.values().get(
+                        spreadsheetId=SPREADSHEET_ID,
+                        range=f"{hoja}!{id_col}:{cap_col}"
+                    ).execute()
+
                     rows = data.get("values", [])
                     fila_idx = fila - 1
                     row = rows[fila_idx] + [""] * 24
                     capitulo = row[2]
+
                     nuevo_contenido = (
-                        f"{contenido}\n"
-                        f"Capítulo completado, actualizado en tabla.\n"
-                        f"<@&1357527939226533920>, el capítulo {capitulo} está listo para subir.\n\n"
+                        f"{encabezado}\n"
+                        f"{proyecto}\n"
+                        f"Capítulo completado, pasa a QC.\n"
                     )
                 else:
-                    nuevo_contenido = f"{contenido}\nCapítulo completado, actualizado en tabla.\n\n"
+                    nuevo_contenido = (
+                        f"{encabezado}\n"
+                        f"{proyecto}\n"
+                        f"Rol completado, actualizado en tabla."
+                    )
 
                 await reaction.message.edit(content=nuevo_contenido)
-            except:
+
+            except Exception:
+                traceback.print_exc()
                 await reaction.message.channel.send(
-                    f"✨ <@{user.id}> completó TYPE.\n"
+                    f"✨ <@{user.id}> completó {proceso}.\n"
                     f"El capítulo ha sido añadido al proceso de QC 💖"
                 )
+
             # --- Eliminar de memoria ---
             assignments.pop(msg_id, None)
             print(f"[MEMORY] Eliminado msg {msg_id}")
@@ -892,35 +913,6 @@ LEC_DOMAINS = [
     "lectorjpg.com",
     "visorjpg.lat"
 ]
-
-def leer_csv_catharsis(ruta_csv):
-    """
-    Lee el reporte CSV de Catharsis y devuelve:
-    {
-        "CATH_ID": "capítulos"
-    }
-
-    El módulo csv maneja correctamente los títulos que contienen
-    saltos de línea dentro de comillas.
-    """
-    datos = {}
-
-    try:
-        with open(ruta_csv, "r", encoding="utf-8-sig", newline="") as archivo:
-            lector = csv.DictReader(archivo, delimiter=";")
-            for fila in lector:
-                cath_id = str(fila.get("ID", "")).strip()
-                capitulos = str(fila.get("Capítulos", "")).strip()
-                if not cath_id:
-                    continue
-                if not capitulos:
-                    capitulos = "N/D"
-                datos[cath_id] = capitulos
-        return datos
-    except Exception as e:
-        print(f"❌ Error leyendo CSV de Catharsis: {e}")
-        raise
-
 def url_with_domain(url: str, new_domain: str) -> str:
     """Reemplaza el dominio de un URL manteniendo esquema y path."""
     p = urlparse(url)
@@ -1365,7 +1357,7 @@ def evento_cath(url, preestreno=False, retries=3, delay=5):
         f"> Capítulo: {numero}\n"
         f"> Actualizado: {fecha}"
     )
-def evento_capi(url, retries=3, delay=5):
+def evento_capi(url, preestreno=False, retries=3, delay=5):
     headers_web = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1375,51 +1367,34 @@ def evento_capi(url, retries=3, delay=5):
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         "Referer": "https://capibaratraductor.com/"
     }
-
     api_key = CAPI_API_KEY.strip()
-
     if not api_key:
         print("❌ CAPIBARA: falta CAPI_API_KEY.")
         return "❌ Falta la API key de CAPIBARA."
-
-    # ------------------------------------------------------
     # EXTRAER SLUG DE LA URL
     # Acepta /breakscan/manga/slug y /red/breakscan/manga/slug
-    # ------------------------------------------------------
     try:
         parsed_url = urlparse(url)
-
         if parsed_url.hostname != "capibaratraductor.com":
             return "❌ El enlace no pertenece a CAPIBARA."
-
         partes = [
             parte for parte in parsed_url.path.split("/")
             if parte
         ]
-
         if "manga" not in partes:
             return "❌ No se encontró la ruta del manga en CAPIBARA."
-
         indice_manga = partes.index("manga")
-
         if indice_manga + 1 >= len(partes):
             return "❌ No se encontró el slug de la obra."
-
         slug_url = partes[indice_manga + 1]
-
     except Exception as e:
         print(f"⚠️ CAPIBARA: error interpretando el enlace: {e}")
         return "❌ No se pudo interpretar el enlace de CAPIBARA."
-
-    # ------------------------------------------------------
     # CONSULTA Y REINTENTOS
-    # ------------------------------------------------------
     for intento in range(1, retries + 1):
         try:
             with requests.Session() as session:
-
                 session.headers.update(headers_web)
-
                 # Se conserva la cookie que usaba la función anterior.
                 session.cookies.set(
                     "nsfw",
@@ -1427,30 +1402,23 @@ def evento_capi(url, retries=3, delay=5):
                     domain="capibaratraductor.com",
                     path="/"
                 )
-
-                # ------------------------------------------
                 # 1. DESCARGAR LA PÁGINA Y EXTRAER EL ID
-                # ------------------------------------------
                 page_response = session.get(
                     url,
                     timeout=20
                 )
                 page_response.raise_for_status()
-
                 # Buscamos el atributo props que contiene manga.
                 props_match = re.search(
                     r'\bprops\s*=\s*"([^"]*&quot;manga&quot;[^"]*)"',
                     page_response.text,
                     re.IGNORECASE
                 )
-
                 if not props_match:
                     raise ValueError(
                         "No se encontró el atributo props con los datos del manga."
                     )
-
                 props_text = props_match.group(1)
-
                 # Patrón verificado con las obras de prueba:
                 # &quot;manga&quot;:[0,{&quot;id&quot;:[0,2769]
                 id_match = re.search(
@@ -1459,22 +1427,16 @@ def evento_capi(url, retries=3, delay=5):
                     props_text,
                     re.DOTALL
                 )
-
                 if not id_match:
                     raise ValueError(
                         "Se encontró props, pero no se pudo extraer el ID."
                     )
-
                 manga_id = int(id_match.group(1))
-
                 print(
                     f"🔎 CAPIBARA: slug={slug_url}, "
                     f"ID extraído={manga_id}"
                 )
-
-                # ------------------------------------------
                 # 2. CONSULTAR LA API OFICIAL
-                # ------------------------------------------
                 api_response = session.get(
                     f"https://capibaratraductor.com/api/v1/works/{manga_id}",
                     headers={
@@ -1483,44 +1445,32 @@ def evento_capi(url, retries=3, delay=5):
                     },
                     timeout=20
                 )
-
                 api_response.raise_for_status()
                 resultado = api_response.json()
-
                 if not resultado.get("status"):
                     raise ValueError(
                         "La API respondió con error: "
                         + str(resultado.get("message", resultado))
                     )
-
                 obra = resultado.get("data")
-
                 if not isinstance(obra, dict):
                     raise ValueError(
                         "La API no devolvió los datos esperados de la obra."
                     )
-
-                # ------------------------------------------
                 # 3. VALIDAR QUE SEA LA OBRA CORRECTA
-                # ------------------------------------------
                 id_api = obra.get("id")
                 slug_api = obra.get("slug")
-
                 if id_api != manga_id:
                     raise ValueError(
                         f"El ID de la API ({id_api}) no coincide "
                         f"con el ID extraído ({manga_id})."
                     )
-
                 if slug_api != slug_url:
                     raise ValueError(
                         f"El slug de la API ({slug_api}) no coincide "
                         f"con el slug del enlace ({slug_url})."
                     )
-
-                # ------------------------------------------
                 # 4. OBTENER CAPÍTULOS
-                # ------------------------------------------
                 capitulos = obra.get("chapters")
 
                 if capitulos is None:
@@ -1528,38 +1478,163 @@ def evento_capi(url, retries=3, delay=5):
                         "La API no devolvió el número de capítulos."
                     )
 
-                # ------------------------------------------
-                # 5. CALCULAR DÍAS DESDE LA ACTUALIZACIÓN
-                # ------------------------------------------
-                ultima_actualizacion = obra.get("lastChapterAt")
+                # 💖 Editado por Rami: aplicar preestreno
+                if preestreno:
+                    try:
+                        capitulos_num = int(capitulos)
 
+                        if capitulos_num > 0:
+                            capitulos_num -= 1
+
+                        capitulos = capitulos_num
+
+                        print(
+                            f"🧪 CAPIBARA: preestreno activado: "
+                            f"{capitulos}"
+                        )
+
+                    except (ValueError, TypeError):
+                        print(
+                            "⚠️ CAPIBARA: no se pudo aplicar "
+                            "el preestreno al total de capítulos."
+                        )
+
+                # 5. CALCULAR DÍAS DESDE LA ACTUALIZACIÓN
+                ultima_actualizacion = obra.get("lastChapterAt")
                 if ultima_actualizacion:
                     fecha_dt = datetime.fromisoformat(
                         ultima_actualizacion.replace("Z", "+00:00")
                     )
-
                     ahora = datetime.now(fecha_dt.tzinfo)
                     dias = (ahora.date() - fecha_dt.date()).days
-
                     if dias == 1:
                         fecha_texto = "1 día atrás"
                     else:
                         fecha_texto = f"{dias} días atrás"
                 else:
                     fecha_texto = "Desconocido"
-
                 print(
                     f"✅ CAPIBARA: {obra.get('title')} | "
                     f"Capítulos: {capitulos} | "
                     f"Actualizado: {fecha_texto}"
                 )
-
+                
                 # Conservamos el formato que utiliza !sit.
                 return (
                     f"CAPIBARA\n"
                     f"> Capítulo: {capitulos}\n"
                     f"> Actualizado: {fecha_texto}"
                 )
+        except requests.HTTPError as e:
+            codigo = (
+                e.response.status_code
+                if e.response is not None
+                else None
+            )
+            if codigo in (429, 503, 520) and intento < retries:
+                print(
+                    f"⚠️ CAPIBARA intento {intento}/{retries}: "
+                    f"HTTP {codigo}; reintentando en {delay}s..."
+                )
+                time.sleep(delay)
+                continue
+            print(f"❌ CAPIBARA: error HTTP: {e}")
+            return f"❌ Error HTTP en CAPIBARA: {codigo}"
+        except (requests.RequestException, ValueError, KeyError) as e:
+            print(
+                f"⚠️ CAPIBARA intento {intento}/{retries}: {e}"
+            )
+            if intento < retries:
+                time.sleep(delay)
+                continue
+            return (
+                "❌ No se pudo consultar CAPIBARA "
+                "después de varios intentos."
+            )
+        except Exception as e:
+            print(
+                f"⚠️ CAPIBARA: error inesperado "
+                f"en intento {intento}/{retries}: {e}"
+            )
+            if intento < retries:
+                time.sleep(delay)
+                continue
+            return "❌ Error inesperado al consultar CAPIBARA."
+    return "❌ No se pudo consultar CAPIBARA."
+def evento_manga(url, preestreno=False, retries=3, delay=5):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/142.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Referer": "https://mangation.com/"
+    }
+
+    # Validar el dominio
+    try:
+        parsed = urlparse(url)
+
+        if parsed.hostname not in (
+            "mangation.com",
+            "www.mangation.com"
+        ):
+            return "❌ El enlace no pertenece a Mangation."
+
+    except Exception:
+        return "❌ No se pudo interpretar el enlace de Mangation."
+
+    for intento in range(1, retries + 1):
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=20
+            )
+            response.raise_for_status()
+
+            soup = BeautifulSoup(
+                response.text,
+                "html.parser"
+            )
+
+            # Buscar el texto visible, por ejemplo: "31 cap."
+            capitulo = None
+
+            for span in soup.find_all("span"):
+                texto = span.get_text(" ", strip=True)
+                match = re.fullmatch(
+                    r"(\d+)\s*cap\.?",
+                    texto,
+                    re.IGNORECASE
+                )
+
+                if match:
+                    capitulo = int(match.group(1))
+                    break
+
+            if capitulo is None:
+                return (
+                    "❌ No se encontró el número de capítulo "
+                    "en Mangation."
+                )
+            if preestreno and capitulo > 0:
+                capitulo -= 1
+
+            capitulo = str(capitulo)
+
+
+#            print(
+#                f"✅ MANGATION: Capítulo {capitulo} | "
+#                "Actualizado: N/A"
+#            )
+
+            return (
+                "MANGATION\n"
+                f"> Capítulo: {capitulo}\n"
+                "> Actualizado: N/A"
+            )
 
         except requests.HTTPError as e:
             codigo = (
@@ -1570,18 +1645,19 @@ def evento_capi(url, retries=3, delay=5):
 
             if codigo in (429, 503, 520) and intento < retries:
                 print(
-                    f"⚠️ CAPIBARA intento {intento}/{retries}: "
-                    f"HTTP {codigo}; reintentando en {delay}s..."
+                    f"⚠️ Mangation intento "
+                    f"{intento}/{retries}: HTTP {codigo}. "
+                    f"Reintentando en {delay}s..."
                 )
                 time.sleep(delay)
                 continue
 
-            print(f"❌ CAPIBARA: error HTTP: {e}")
-            return f"❌ Error HTTP en CAPIBARA: {codigo}"
+            return f"❌ Error HTTP en Mangation: {codigo}"
 
-        except (requests.RequestException, ValueError, KeyError) as e:
+        except requests.RequestException as e:
             print(
-                f"⚠️ CAPIBARA intento {intento}/{retries}: {e}"
+                f"⚠️ Mangation intento "
+                f"{intento}/{retries}: {e}"
             )
 
             if intento < retries:
@@ -1589,23 +1665,14 @@ def evento_capi(url, retries=3, delay=5):
                 continue
 
             return (
-                "❌ No se pudo consultar CAPIBARA "
+                "❌ No se pudo consultar Mangation "
                 "después de varios intentos."
             )
 
         except Exception as e:
-            print(
-                f"⚠️ CAPIBARA: error inesperado "
-                f"en intento {intento}/{retries}: {e}"
-            )
-
-            if intento < retries:
-                time.sleep(delay)
-                continue
-
-            return "❌ Error inesperado al consultar CAPIBARA."
-
-    return "❌ No se pudo consultar CAPIBARA."
+            print(f"⚠️ Error inesperado en Mangation: {e}")
+            return "❌ Error inesperado al consultar Mangation."
+    return "❌ No se pudo consultar Mangation."
 def fecha_a_dias_atras(fecha_str):
     fecha_str = fecha_str.strip().lower()
 
@@ -2169,6 +2236,7 @@ LINK_GLOBAL_ETER = "https://eternalmangas.org/"
 LINK_GLOBAL_CATH = "https://catharsisworld.com/"
 LINK_GLOBAL_LEC  = "https://lectorjpg.com/"
 LINK_GLOBAL_COL  = "https://capibaratraductor.com/"
+LINK_GLOBAL_MANGA = "https://mangation.com/"
 
 # --- Helpers para Google Sheets ---
 def normalize_channel_name(ch: str) -> str:
@@ -2247,10 +2315,12 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
         "LINK_ETER": None,
         "LINK_LEC": None,
         "LINK_COL": None,
+        "LINK_MANGA": None,
         "PRE_ETER": False,
         "PRE_CATH": False,
         "PRE_LEC": False,
-        "PRE_COL": False
+        "PRE_COL": False,
+        "PRE_MANGA": False
     }
     try:
         pins = await channel.pins()
@@ -2273,6 +2343,8 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                 found["LINK_LEC"] = u
             if "capibara" in lu and not found["LINK_COL"]:
                 found["LINK_COL"] = u
+            if "mangation.com" in lu and not found["LINK_MANGA"]:
+                found["LINK_MANGA"] = u
 
     # Si no hay URLs, intentar detectar formatos tipo "Eternal: 00" o "Eternal: slug"
         # Buscamos líneas con prefijos conocidos
@@ -2298,7 +2370,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                     elif valor and not found["LINK_CATH"]:
                         found["LINK_CATH"] = valor
 
-            if ln_stripped.lower().startswith("lector"):
+            if ln_stripped.lower().startswith("jpg"):
                 parts = ln_stripped.split(":", 1)
                 if len(parts) > 1:
                     valor = parts[1].strip().lower()
@@ -2307,7 +2379,7 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                     elif valor and not found["LINK_LEC"]:
                         found["LINK_LEC"] = valor
 
-            if ln_stripped.lower().startswith("color"):
+            if ln_stripped.lower().startswith("capibara"):
                 parts = ln_stripped.split(":", 1)
                 if len(parts) > 1:
                     valor = parts[1].strip().lower()
@@ -2315,6 +2387,14 @@ async def read_channel_pins(channel: discord.TextChannel) -> Dict[str, Optional[
                         found["PRE_COL"] = True
                     elif valor and not found["LINK_COL"]:
                         found["LINK_COL"] = valor
+            if ln_stripped.lower().startswith("manga"):
+                parts = ln_stripped.split(":", 1)
+                if len(parts) > 1:
+                    valor = parts[1].strip().lower()
+                    if valor == "00":
+                        found["PRE_MANGA"] = True
+                    elif valor and not found["LINK_MANGA"]:
+                        found["LINK_MANGA"] = valor
     return found
 async def buscar_portada(channel):
     pins = await channel.pins()
@@ -2467,6 +2547,7 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
         "LINK_GLOBAL_CATH": LINK_GLOBAL_CATH,
         "LINK_GLOBAL_LEC": LINK_GLOBAL_LEC,
         "LINK_GLOBAL_COL": LINK_GLOBAL_COL,
+        "LINK_GLOBAL_MANGA": LINK_GLOBAL_MANGA,
         # semifijas desde sheet (pueden ser None)
         "TITULO": sheet_row["TITULO"] if sheet_row else None,
         "SINOPSIS": sheet_row["SINOPSIS"] if sheet_row else None,
@@ -2477,6 +2558,7 @@ async def build_variables_for_channel(ctx: commands.Context, channel_input: str)
         "LINK_ETER": pin_vars.get("LINK_ETER"),
         "LINK_LEC": pin_vars.get("LINK_LEC"),
         "LINK_COL": pin_vars.get("LINK_COL"),
+        "LINK_MANGA": pin_vars.get("LINK_MANGA"),
         # detalle del canal
         "CHANNEL_OBJ": target_channel,
         "CHANNEL_NAME": target_channel.name
@@ -2498,11 +2580,13 @@ def render_plantilla_fb(vars_dict: Dict[str, Any], cap_text: str, caps_word: str
         if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
         if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
         if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
+        if safe("LINK_MANGA"):   enlaces.append(f"✦ {safe('LINK_MANGA')}")
     else:
         if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en CatharsisWorld!")
         if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
         if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
         if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
+        if safe("LINK_MANGA"):   enlaces.append("✦ ¡Búscanos en Mangation!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
@@ -2546,11 +2630,13 @@ def render_plantilla_dis(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
         if safe("LINK_ETER"):  enlaces.append(f"✦ {safe('LINK_ETER')}")
         if safe("LINK_LEC"):   enlaces.append(f"✦ {safe('LINK_LEC')}")
         if safe("LINK_COL"):   enlaces.append(f"✦ {safe('LINK_COL')}")
+        if safe("LINK_MANGA"):   enlaces.append(f"✦ {safe('LINK_MANGA')}")
     else:
         if safe("LINK_CATH"):  enlaces.append("✦ ¡Búscanos en CatharsisWorld!")
         if safe("LINK_ETER"):  enlaces.append("✦ ¡Búscanos en EternalMangas!")
         if safe("LINK_LEC"):   enlaces.append("✦ ¡Búscanos en VisorJPG!")
         if safe("LINK_COL"):   enlaces.append("✦ ¡Búscanos en CapibaraTraductor!")
+        if safe("LINK_MANGA"):  enlaces.append("✦ ¡Búscanos en Mangation!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "✦ [No hay enlaces]"
 
@@ -2576,7 +2662,7 @@ def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
     enlaces = []
 
     if use_links:
-        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
+        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL", "LINK_MANGA"):
             v = vars_dict.get(k)
             if v: enlaces.append(v)
     else:
@@ -2584,6 +2670,7 @@ def render_plantilla_tel(vars_dict: Dict[str, Any], cap_text: str, caps_word: st
         if vars_dict.get("LINK_ETER"): enlaces.append("¡Búscanos en EternalMangas!")
         if vars_dict.get("LINK_LEC"):  enlaces.append("¡Búscanos en VisorJPG!")
         if vars_dict.get("LINK_COL"):  enlaces.append("¡Búscanos en CapibaraTraductor!")
+        if vars_dict.get("LINK_MANGA"):  enlaces.append("¡Búscanos en Mangation!")
 
     enlaces_texto = "\n".join(enlaces) if enlaces else "[No hay enlaces]"
 
@@ -2684,7 +2771,21 @@ f"🔗 Link: 👉 {safe('LINK_COL')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_col
-
+# --- Render de plantilla_manga ---
+def render_plantilla_manga(vars_dict: Dict[str, Any], cap_text: str, caps_word_text: str) -> str:
+    def safe(k):
+        v = vars_dict.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return f"[NO_{k}]"
+        return v
+    texto_manga = (
+f"@everyone\n"
+f"**{caps_word_text} {cap_text}**\n"
+f"## 📖✨ **{safe('TITULO')}** ✨📖\n"
+f"🔗 Link: 👉 {safe('LINK_MANGA')}\n\n"
+f"🎀━━━━━━━━━━━━━━━━━🎀"
+    )
+    return texto_manga
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -2992,10 +3093,16 @@ async def sitio(ctx):
         task_map["lector"] = "ND"
     # --- CAPIBARA ---
     if pins_data["LINK_COL"]:
-        tasks.append(asyncio.to_thread(evento_capi, pins_data["LINK_COL"]))
+        tasks.append(asyncio.to_thread(evento_capi, pins_data["LINK_COL"],pins_data.get("PRE_COL", False)))
         task_map[len(tasks)-1] = "capi"
     else:
         task_map["capi"] = "ND"
+    # --- MANGATION ---
+    if pins_data["LINK_MANGA"]:
+        tasks.append(asyncio.to_thread(evento_manga,pins_data["LINK_MANGA"],pins_data.get("PRE_MANGA", False)))
+        task_map[len(tasks) - 1] = "manga"
+    else:
+        task_map["manga"] = "ND"
     if not tasks:
         embed = discord.Embed(
             title="🌸 Saku_Search — *Sin enlaces encontrados*",
@@ -3013,7 +3120,9 @@ async def sitio(ctx):
         "lector_cap": "N/D",
         "lector_date": "N/D",
         "col_cap": "N/D",
-        "col_date": "N/D"
+         "col_date": "N/D",
+        "manga_cap": "N/D",
+        "manga_date": "N/D"
     }
     # --- Procesar resultados reales ---
     for i, res in enumerate(resultados):
@@ -3035,6 +3144,9 @@ async def sitio(ctx):
             elif sitio == "capi":
                 resultado_dict["col_cap"] = "N/A"
                 resultado_dict["col_date"] = "N/A"
+            elif sitio == "manga":
+                resultado_dict["manga_cap"] = "N/A"
+                resultado_dict["manga_date"] = "N/A"
             continue
         cap_match = re.search(r'Capítulo: ([^\n]+)', res)
         act_match = re.search(r'Actualizado: ([^\n]+)', res)
@@ -3056,8 +3168,12 @@ async def sitio(ctx):
             resultado_dict["col_cap"] = cap_texto
             resultado_dict["col_date"] = dias_texto
             sitio_nombre = "CAPIBARA"
+        elif sitio == "manga":
+            resultado_dict["manga_cap"] = cap_texto
+            resultado_dict["manga_date"] = dias_texto
+            sitio_nombre = "MANGATION"
         # ✅ SOLO mostrar embed si hay link (o sea, si entró aquí)
-        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "CAPIBARA": "🐑"}[sitio_nombre]
+        sitio_icono = {"CATHARSIS": "❤️", "ETERNAL": "🌟", "LECTORJPG": "📚", "CAPIBARA": "🐑", "MANGATION": "🧧"}[sitio_nombre]
         embed = discord.Embed(
             title=f"{sitio_icono} {sitio_nombre}",
             description=f"Capítulo: {cap_texto}\nActualizado: {dias_texto}",
@@ -3069,7 +3185,7 @@ async def sitio(ctx):
     escribir_a_hoja(canal, categoria,resultado_dict)
 def escribir_a_hoja(canal, categoria, resultados):
     try:
-        range_name = f"{SHEET_NAME}!A2:K"  # <-- empieza en fila 2
+        range_name = f"{SHEET_NAME}!A2:M"  # <-- empieza en fila 2
         resp = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
         values = resp.get("values", [])
 
@@ -3094,13 +3210,15 @@ def escribir_a_hoja(canal, categoria, resultados):
             resultados.get("lector_cap", "N/D"),
             resultados.get("lector_date", "N/D"),
             resultados.get("col_cap", "N/D"),
-            resultados.get("col_date", "N/D")        
+            resultados.get("col_date", "N/D"),      
+            resultados.get("manga_cap", "N/D"),
+            resultados.get("manga_date", "N/D")    
         ]
 
         body = {"values": [fila]}
 
         if fila_existente:
-            rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:K{fila_existente}"
+            rango_actualizar = f"{SHEET_NAME}!A{fila_existente}:M{fila_existente}"
             sheet.values().update(
                 spreadsheetId=SPREADSHEET_ID,
                 range=rango_actualizar,
@@ -3793,6 +3911,7 @@ async def updater_cmd(ctx: commands.Context):
         texto_eter = render_plantilla_eter(vars_dict, cap_text, palabra_caps)
         texto_lec = render_plantilla_lec(vars_dict, cap_text, palabra_caps)
         texto_col = render_plantilla_col(vars_dict, cap_text, palabra_caps)
+        texto_manga = render_plantilla_manga(vars_dict, cap_text, palabra_caps)
         # 6) reportar estado de variables clave para depuración
         status_lines = []
         status_lines.append(f"Canal detectado: `{vars_dict.get('CHANNEL_NAME')}`")
@@ -3807,7 +3926,7 @@ async def updater_cmd(ctx: commands.Context):
             )
         # pins presence
         pins_info = []
-        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL"):
+        for k in ("LINK_CATH", "LINK_ETER", "LINK_LEC", "LINK_COL", "LINK_MANGA"):
             pins_info.append(f"{k}: {vars_dict.get(k) if vars_dict.get(k) else '[NO]'}")
         status_text = "\n".join(status_lines + ["Pins encontrados:"] + pins_info)
         canal_real = vars_dict.get("CHANNEL_OBJ")  # este es el canal real ya encontrado
@@ -3847,6 +3966,8 @@ async def updater_cmd(ctx: commands.Context):
             await ctx.send("👇 **Previsualización LECTOR**\n\n" + "```" + texto_lec + "```") #esta sólo es cuando existe un link de lector
 #        if vars_dict.get("LINK_COL"):
 #            await ctx.send("👇 **Previsualización CAPIBARA**\n\n" + "```" + texto_col + "```") #esta sólo es cuando existe un link de capibara
+        if vars_dict.get("LINK_MANGA"):
+            await ctx.send("👇 **Previsualización MANGATION**\n\n" + "```" + texto_manga + "```") #esta sólo es cuando existe un link de mangation
         canal_real = vars_dict.get("CHANNEL_OBJ")
         # 8) Anuncio automático en el canal del proyecto
         try:
@@ -4486,14 +4607,18 @@ async def trad(ctx):
             )
         # Enviar la asignación
         asignacion_msg = await ctx.send(
-            f"📘 <@{ctx.author.id}>, tu asignación **TRAD** es {proyecto} - **capítulo {capitulo}**.\n"
-            f"{extra_msg}"
-            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
-            f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *Si confirma que el capítulo ya existe en el drive, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE A ESTA ASIGNACIÓN***.\n"
-            f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
-            f" > - *Consulta a QC sobre como se expresan los personajes según proyecto.*\n "
-            f" > - *Cuando termines, reacciona con 🟡 para marcarlo como completado*.\n\n"
+            f"✏️ <@{ctx.author.id}>, **TRAD** — **Capítulo {capitulo}**.\n"
+            f"📁 **Proyecto** — {proyecto}\n\n"
+            f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
+            f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
+            f"3. !drive — Verifica que exista la RAW. Si ya tiene TRAD, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
+            f"```4. Revisa las tiras tengan secuencia ({capitulo}_01, {capitulo}_02, etc).\n"
+            f"   ⤷ Reporta de inmediato cualquier error de RAW.\n"
+            f"5. Usa el programa BREAK COMANDOS 1.2.2.html. Si necesitas ayuda, notifícalo.\n"
+            f"   ⤷ Recomendable uso de PC.\n"
+            f"6. Desarolla el capítulo asignado, de tener dudas, consulta la guía adjunta al programa.```**➳ Al terminar ⤵︎**\n"
+            f"```7. Sube tu traducción a la carpeta correspondiente.\n"
+            f"8. Reacciona para marcar la asignación como completada.```"
         )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🟡")
@@ -4640,17 +4765,20 @@ async def clean(ctx):
                 f"\n✨ Esta es tu asignación adaptativa (**{progreso}/5**).\n"
                 f"{mensaje_extra}\n"
             )
-        # Enviar mensaje de asignación
+        # Enviar la asignación
         asignacion_msg = await ctx.send(
-            f"🧹 <@{ctx.author.id}>, tu asignación **CLEAN** es {proyecto} - **capítulo {capitulo}**.\n"
-            f"{extra_msg}"
-            f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
-            f" > - *Usa !drive para revisar si el capítulo existe o no.*\n "
-            f" > - *Si confirma que el capítulo ya existe en el drive, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE A ESTA ASIGNACIÓN***.\n"
-            f" > - *Antes de comenzar, revisa la RAW completa con la herramienta **BREAK COMANDOS 1.2.0**., de encontrar errores, indícalo en el canal apropiado para su respectiva retención.*\n"
-            f" > - *Recuerde colocar las marcas de agua adecuadamente.*\n "
-            f" > - *Las tiras completadas deben ser entregadas en formato JPG.*\n "
-            f" > - *Cuando termines, reacciona con 🔵 para marcarlo como completado.*\n\n"
+            f"🧹 <@{ctx.author.id}>, **CLEAN** — **Capítulo {capitulo}**.\n"
+            f"📁 **Proyecto** — {proyecto}\n\n"
+            f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
+            f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
+            f"3. !drive — Verifica que exista la RAW. Si ya tiene CLEAN, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
+            f"```4. Revisa las tiras tengan secuencia ({capitulo}_01, {capitulo}_02, etc).\n"
+            f"   ⤷ Reporta de inmediato cualquier error de RAW.\n"
+            f"5. Usa el programa BREAKMARKS para la colocación de marcas. Si necesitas ayuda, notifícalo.\n"
+            f"6. Desarolla el capítulo asignado, incluyendo redibujo de ser necesario.```**➳ Al terminar ⤵︎**\n"
+            f"```7. Sube las tiras en formato .JPG y máxima calidad (12) a la carpeta correspondiente.\n"
+            f"   ⤷ Recuerda usar la opción 'Guardar como...' en Photoshop.\n"
+            f"8. Reacciona para marcar la asignación como completada.```"
         )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🔵")
@@ -4808,25 +4936,37 @@ async def type(ctx):
             )
         if tiene_doble_rol:
             asignacion_msg = await ctx.send(
-                f"🎨+👁️ <@{ctx.author.id}>, tu asignación **TYPE/QC** es {proyecto} - **capítulo {capitulo}**.\n"
-                f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
-                f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-                f" > - *Si el capítulo ya ha sido completado, sólo haga el QC/WEBP.*\n"
-                f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
-                f" > - *Tiras editables, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
-                f" > - *En tu caso, apóyanos realizando su respectivo QC y WEBP.*\n "
-                f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
+                f"🎨|👁️ <@{ctx.author.id}>, **TYPE | QC** — **Capítulo {capitulo}**.\n"
+                f"📁 **Proyecto** — {proyecto}\n\n"
+                f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo.\n"
+                f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
+                f"3. !drive — Verifica que existan RAW, TR y CL. Si ya tiene TYPE, sólo desarrolla el QC/WEBP.```**➳ Durante tu proceso ⤵︎**\n"
+                f"```4. Revisa las tiras tengan secuencia ({capitulo}_01, {capitulo}_02, etc).\n"
+                f"   ⤷ Reporta de inmediato cualquier error de RAW o CLEAN.\n"
+                f"5. Desarrolla el capítulo asignado con el paquete de comandos más actual, no olvides colocar la estampa de revisado por QC.\n```**➳ Al terminar ⤵︎**\n"
+                f"```6. Usa NANIPOSTING para subir el capítulo.\n"
+                f"7. Convierte a WEBP con el programa QC_WEBP+BANNER_V3_9K.exe y sube la carpeta a 'Ready'.\n"
+                f"8. Crea el cover y publícalo en:\n"
+                f"   ⤷ Hilo correspondiente en #cover.\n"
+                f"   ⤷ Carpeta 'Ready' de drive.\n"
+                f"9. Reacciona para marcar la asignación como completada.```"
             )
         else:
+            # Enviar la asignación
             asignacion_msg = await ctx.send(
-                f"🎨 <@{ctx.author.id}>, tu asignación **TYPE** es {proyecto} - **capítulo {capitulo}**.\n"
-                f"{extra_msg}"
-                f" > - *Si no tienes acceso al canal, solicítalo a @QC | @ADMIN.*\n "
-                f" > - *Usa el comando !drive para revisar si el capítulo existe o no.*\n "
-                f" > - *Si el capítulo ya ha sido completado, avise a un ADMIN para que sea cerrado manualmente y **NO REACCIONE**.*\n"
-                f" > - *Revise cuidadosamente las tiras, de encontrar errores de RAW, anuncielo en los canales apropiados.*\n"
-                f" > - *Tiras editables/JPG, cover, y hoja de créditos deben ir en sus canales correspondientes*\n "
-                f" > - *Cuando termines, reacciona con 🟣 para marcarlo como completado.*\n\n"
+                f"🎨 <@{ctx.author.id}>, **TYPE** — **Capítulo {capitulo}**.\n"
+                f"📁 **Proyecto** — {proyecto}\n\n"
+                f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
+                f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
+                f"3. !drive — Verifica que existan RAW, TR y CL. Si ya tiene TYPE, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
+                f"```4. Revisa las tiras tengan secuencia ({capitulo}_01, {capitulo}_02, etc).\n"
+                f"   ⤷ Reporta de inmediato cualquier error de RAW.\n"
+                f"5. Desarolla el capítulo asignado con el paquete de comandos más actual.`\n```**➳ Al terminar ⤵︎**\n"
+                f"```6. Usa NANIPOSTING para subir el capítulo. Si necesitas ayuda, notifícalo.\n"
+                f"7. Crea el cover y publícalo en:\n"
+                f"   ⤷ Hilo correspondiente en #cover.\n"
+                f"   ⤷ Carpeta 'Ready' de drive.\n"
+                f"8. Reacciona para marcar la asignación como completada.```"
             )
         await asyncio.sleep(0.1)
         await asignacion_msg.add_reaction("🟣")
