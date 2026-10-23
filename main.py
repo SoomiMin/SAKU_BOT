@@ -4608,7 +4608,8 @@ async def trad(ctx):
         # Enviar la asignación
         asignacion_msg = await ctx.send(
             f"✏️ <@{ctx.author.id}>, **TRAD** — **Capítulo {capitulo}**.\n"
-            f"📁 **Proyecto** — {proyecto}\n\n"
+            f"📁 **Proyecto** — {proyecto}\n"
+            f"{extra_msg}\n\n"
             f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
             f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
             f"3. !drive — Verifica que exista la RAW. Si ya tiene TRAD, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
@@ -4768,7 +4769,8 @@ async def clean(ctx):
         # Enviar la asignación
         asignacion_msg = await ctx.send(
             f"🧹 <@{ctx.author.id}>, **CLEAN** — **Capítulo {capitulo}**.\n"
-            f"📁 **Proyecto** — {proyecto}\n\n"
+            f"📁 **Proyecto** — {proyecto}\n"
+            f"{extra_msg}\n\n"
             f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
             f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
             f"3. !drive — Verifica que exista la RAW. Si ya tiene CLEAN, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
@@ -4955,7 +4957,8 @@ async def type(ctx):
             # Enviar la asignación
             asignacion_msg = await ctx.send(
                 f"🎨 <@{ctx.author.id}>, **TYPE** — **Capítulo {capitulo}**.\n"
-                f"📁 **Proyecto** — {proyecto}\n\n"
+                f"📁 **Proyecto** — {proyecto}\n"
+                f"{extra_msg}\n\n"
                 f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
                 f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
                 f"3. !drive — Verifica que existan RAW, TR y CL. Si ya tiene TYPE, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
