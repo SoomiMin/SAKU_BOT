@@ -1,4 +1,4 @@
-import os, re, discord, asyncio, requests, time, json
+import os, re, discord, asyncio, requests, time, json, unicodedata
 from discord.ext import commands
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -23,6 +23,8 @@ from telethon.tl.functions.messages import CreateForumTopicRequest
 from telethon.tl.types import MessageService, MessageActionTopicCreate
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from googleapiclient.http import MediaIoBaseDownload
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -141,6 +143,7 @@ SHEET_NAME3 = os.getenv("SHEET_NAME3")
 SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
+NANI_ASSIST_CHANNEL_ID = 1567409556919816252
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
@@ -799,98 +802,7 @@ def join_ranges(numbers):
     ranges.append(f"{start}" if start==prev else f"{start} al {prev}")
     return " / ".join(ranges)
     
-# Funciones de Saku_RAW 
-def evento_a(soup):
-    contenedores = soup.select('astro-slot > div[data-hk]')
-    if contenedores:
-        ultimo_div = contenedores[-1]
-        enlace = ultimo_div.select_one('a.link-hover')
-        if enlace:
-            return enlace.get_text(strip=True)
-    return None
-
-def evento_b(soup):
-    b_tag = soup.select_one("div.main b")
-    return b_tag.get_text(strip=True) if b_tag else None
-
-def evento_c(soup):
-    for li in soup.select('li.flex.justify-between'):
-        spans = li.find_all('span')
-        if len(spans) == 2:
-            return spans[0].get_text(strip=True)
-    return None
-
-def evento_d(soup):
-    contenedor = soup.select_one('div.all_data_list ul.fed-part-rows li a')
-    return contenedor.get_text(strip=True) if contenedor else None
-
-def evento_e(html):
-    match = re.search(r'<span class="epcur epcurlast">\s*(.*?)\s*</span>', html, re.IGNORECASE)
-    return match.group(1).strip() if match else None
-
-def evento_f(soup):
-    spans = soup.select('div.title-item span.text')
-    texto_libres = [s.get_text(strip=True) for s in spans if "text-locked" not in s.get("class", [])]
-    return texto_libres[-1] if texto_libres else None
-
-def evento_g(soup):
-    primer_li = soup.select_one("li.wp-manga-chapter a")
-    if primer_li:
-        texto = primer_li.get_text(strip=True)
-        return texto if "Chapter" in texto else None
-    return None
-
-def evento_h(html):
-    match = re.search(r'title="(Ch\.\s*\d+)"', html)
-    return match.group(1) if match else None
-
-def evento_i(html):
-    match = re.search(r'<div class="latest-chapters">.*?<a[^>]*>\s*<strong[^>]*>(.*?)</strong>', html, re.DOTALL)
-    return match.group(1).strip() if match else None
-
-def evento_j(soup):
-    bloques = soup.select('div.group.flex.flex-col')
-    for bloque in bloques:
-        sub = bloque.select_one('div.space-x-1 a.link-hover')
-        if sub:
-            texto = sub.get_text(strip=True)
-            span = bloque.select_one('div.space-x-1 span.opacity-80')
-            extra = span.get_text(strip=True) if span else ""
-            return f"{texto} {extra}".strip()
-    return None
-
-def detectar_evento(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=20)
-        if r.status_code != 200:
-            return None, "Error HTTP"
-
-        html = r.text
-        soup = BeautifulSoup(html, "html.parser")
-
-        for letra, func in [
-            ("A", lambda: evento_a(soup)),
-            ("B", lambda: evento_b(soup)),
-            ("C", lambda: evento_c(soup)),
-            ("D", lambda: evento_d(soup)),
-            ("E", lambda: evento_e(html)),
-            ("F", lambda: evento_f(soup)),
-            ("G", lambda: evento_g(soup)),
-            ("H", lambda: evento_h(html)),
-            ("I", lambda: evento_i(html)),
-            ("J", lambda: evento_j(soup)),
-        ]:
-            resultado = func()
-            if resultado:
-                return resultado, letra
-
-        return None, "No detectado"
-
-    except Exception as e:
-        return None, str(e)
-    pass
-
+# Funciones de Saku_RAW (DESACTIVADO)
 # Funciones de Saku_Search
 MESES = {
     "enero": "January", "febrero": "February", "marzo": "March", "abril": "April",
@@ -1623,12 +1535,6 @@ def evento_manga(url, preestreno=False, retries=3, delay=5):
                 capitulo -= 1
 
             capitulo = str(capitulo)
-
-
-#            print(
-#                f"✅ MANGATION: Capítulo {capitulo} | "
-#                "Actualizado: N/A"
-#            )
 
             return (
                 "MANGATION\n"
@@ -2438,11 +2344,7 @@ def lobotomizar_cath_link(original_url: str) -> str:
                 nuevo_url = (
                     f"{LOBOTOMIA_CATH_DOMAIN}/manga/{slug}"
                 )
-#                print(
-#                    f"🧠 Lobotomía Catharsis:\n"
-#                    f"   Viejo: {original_url}\n"
-#                    f"   Nuevo: {nuevo_url}"
-#                )
+
                 return nuevo_url
         # ---------------------------------------------
         # Si no sabemos transformarlo, no tocarlo
@@ -2786,6 +2688,813 @@ f"🔗 Link: 👉 {safe('LINK_MANGA')}\n\n"
 f"🎀━━━━━━━━━━━━━━━━━🎀"
     )
     return texto_manga
+
+# Funciones de Saku_Assist
+def obtener_id_asignado(valor):
+    """
+    Extrae el ID de Discord de campos como:
+    le_roiz / 641362442701766698
+    """
+    if not valor:
+        return ""
+
+    partes = str(valor).split("/")
+    posible_id = partes[-1].strip()
+
+    return posible_id if posible_id.isdigit() else ""
+
+
+def obtener_idioma(row):
+    """
+    H: KR
+    I: ING
+    J: INDO
+    K: CHIN
+
+    Solo devuelve un idioma si existe exactamente un 1.
+    """
+    idiomas = ["KR", "ING", "INDO", "CHIN"]
+
+    seleccionados = []
+
+    for indice, idioma in enumerate(idiomas, start=7):
+        valor = str(row[indice]).strip().upper()
+
+        if valor in ("1", "1.0"):
+            seleccionados.append(idioma)
+
+    if len(seleccionados) == 1:
+        return seleccionados[0]
+
+    return "—"
+
+
+def formato_capitulo(valor):
+    try:
+        numero = float(valor)
+        return str(int(numero)) if numero.is_integer() else str(numero)
+    except (ValueError, TypeError):
+        return str(valor)
+
+
+def construir_tabla(headers, datos):
+    """
+    Construye una tabla ASCII con anchos dinámicos.
+    """
+    if not datos:
+        return ""
+
+    anchos = [
+        max(len(str(fila[i])) for fila in [headers] + datos)
+        for i in range(len(headers))
+    ]
+
+    def separador():
+        return "+" + "+".join(
+            "-" * (ancho + 2) for ancho in anchos
+        ) + "+"
+
+    def fila_texto(fila):
+        return "| " + " | ".join(
+            str(fila[i]).ljust(anchos[i])
+            for i in range(len(headers))
+        ) + " |"
+
+    lineas = [
+        separador(),
+        fila_texto(headers),
+        separador()
+    ]
+
+    for fila in datos:
+        lineas.append(fila_texto(fila))
+        lineas.append(separador())
+
+    return "\n".join(lineas)
+
+
+async def enviar_tabla(ctx, texto):
+    """
+    Divide las tablas sin cortar filas ni bloques de código.
+    """
+    lineas = texto.splitlines()
+    chunk = ""
+
+    for linea in lineas:
+        candidato = chunk + linea + "\n"
+
+        if len(candidato) > 1800 and chunk:
+            await ctx.send(f"```{chunk}```")
+            chunk = ""
+
+        chunk += linea + "\n"
+
+    if chunk:
+        await ctx.send(f"```{chunk}```")
+
+def obtener_asignaciones_personales(discord_id):
+
+    data = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{SHEET_NAME3}!A:Y"
+    ).execute()
+
+    rows = data.get("values", [])
+
+    asignaciones = []
+
+    orden_roles = [
+        ("TRAD", 4, 11),
+        ("CLEAN", 5, 12),
+        ("TYPE", 6, 13)
+    ]
+
+    for i in range(1, len(rows)):
+
+        row = rows[i] + [""] * max(0, 24 - len(rows[i]))
+
+        proyecto = recortar_proyecto(row[1])[:15]
+        capitulo = row[2]
+
+        cap_num = parse_cap(capitulo)
+
+        if cap_num is None:
+            continue
+
+        for rol, col_estado, col_usuario in orden_roles:
+
+            estado = str(row[col_estado]).strip().upper()
+
+            if not estado.startswith("ASIGNADO"):
+                continue
+
+            usuario_id = obtener_id_asignado(
+                row[col_usuario]
+            )
+
+            if usuario_id != str(discord_id):
+                continue
+
+            # El idioma solo se muestra para TRAD
+            idioma = obtener_idioma(row) if rol == "TRAD" else ""
+
+            asignaciones.append({
+                "rol": rol,
+                "proyecto": proyecto,
+                "capitulo": capitulo,
+                "cap_num": cap_num,
+                "idioma": idioma
+            })
+
+    return asignaciones
+def validar_asignacion_assist(
+    discord_id,
+    canal,
+    rol,
+    capitulo,
+    idioma=None
+):
+    """
+    Comprueba directamente en ASIGNACIONES que el usuario
+    tenga asignado el proyecto, capítulo y rol solicitados.
+
+    Utiliza el nombre COMPLETO del proyecto de la hoja,
+    no la abreviación utilizada en la cuadrícula.
+    """
+
+    resultado = {
+        "ok": False,
+        "motivo": None,
+        "proyecto": None,
+        "capitulo": None,
+        "rol": rol,
+        "idioma": None
+    }
+
+    rol = str(rol).strip().upper()
+    idioma = str(idioma or "").strip().upper()
+
+
+    # 1. VALIDAR ROL
+
+
+    columnas = {
+        "TRAD": (4, 11),
+        "CLEAN": (5, 12)
+    }
+
+    if rol not in columnas:
+        resultado["motivo"] = (
+            "Rol no válido para NANI ASSIST. "
+            "Por ahora solamente están habilitados TRAD y CLEAN."
+        )
+        return resultado
+
+
+    # 2. VALIDAR IDIOMA
+
+
+    idiomas_validos = ["KR", "ING", "INDO", "CHIN"]
+
+    if rol == "TRAD":
+
+        if idioma not in idiomas_validos:
+            resultado["motivo"] = (
+                "Para TRAD debes indicar un idioma válido: "
+                "KR, ING, INDO o CHIN."
+            )
+            return resultado
+
+    elif idioma:
+        resultado["motivo"] = (
+            "CLEAN no necesita idioma. "
+            "Utiliza el comando sin ese argumento."
+        )
+        return resultado
+
+
+    # 3. VALIDAR CAPÍTULO
+
+
+    cap_solicitado = parse_cap(capitulo)
+
+    if cap_solicitado is None:
+        resultado["motivo"] = (
+            f"El capítulo '{capitulo}' no tiene un formato válido."
+        )
+        return resultado
+
+
+    # 4. LEER ASIGNACIONES
+
+
+    try:
+        data = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME3}!A:Y"
+        ).execute()
+
+        rows = data.get("values", [])
+
+    except Exception as e:
+        resultado["motivo"] = (
+            f"No pude consultar ASIGNACIONES: {e}"
+        )
+        return resultado
+
+
+    # 5. COMPARAR PROYECTO, CAPÍTULO Y USUARIO
+
+
+    canal_normalizado = normalizar_nombre_drive(canal.name)
+
+    col_estado, col_usuario = columnas[rol]
+
+    coincidencias = []
+
+    for i in range(1, len(rows)):
+
+        row = rows[i] + [""] * max(0, 24 - len(rows[i]))
+
+        proyecto_original = str(row[1]).strip()
+
+        if not proyecto_original:
+            continue
+
+        # Comparar el nombre completo, sin la almohadilla
+        proyecto_normalizado = normalizar_nombre_drive(
+            proyecto_original.lstrip("#")
+        )
+
+        if proyecto_normalizado != canal_normalizado:
+            continue
+
+        cap_fila = parse_cap(row[2])
+
+        if cap_fila is None or cap_fila != cap_solicitado:
+            continue
+
+        estado = str(row[col_estado]).strip().upper()
+
+        if not estado.startswith("ASIGNADO"):
+            continue
+
+        usuario_id = obtener_id_asignado(row[col_usuario])
+
+        if usuario_id != str(discord_id):
+            continue
+
+        # --------------------------------------------------
+        # 6. VALIDAR IDIOMA DE TRAD
+        # --------------------------------------------------
+
+        idioma_fila = ""
+
+        if rol == "TRAD":
+
+            idioma_fila = obtener_idioma(row)
+
+            if idioma_fila != idioma:
+                continue
+
+        coincidencias.append({
+            "proyecto": proyecto_original,
+            "capitulo": formato_capitulo(row[2]),
+            "rol": rol,
+            "idioma": idioma_fila
+        })
+
+
+    # 7. RESULTADO
+
+
+    if not coincidencias:
+        resultado["motivo"] = (
+            "No encontré una asignación activa que coincida "
+            "con tu usuario, proyecto, capítulo, rol e idioma."
+        )
+        return resultado
+
+    if len(coincidencias) > 1:
+        resultado["motivo"] = (
+            "Encontré varias asignaciones coincidentes. "
+            "No continuaré para evitar procesar una solicitud ambigua."
+        )
+        return resultado
+
+    resultado.update(coincidencias[0])
+    resultado["ok"] = True
+
+    print(
+        f"✅ ASSIST → Asignación validada\n"
+        f"   Usuario: {discord_id}\n"
+        f"   Proyecto: {resultado['proyecto']}\n"
+        f"   Rol: {rol}\n"
+        f"   Capítulo: {resultado['capitulo']}\n"
+        f"   Idioma: {resultado['idioma'] or 'N/A'}"
+    )
+
+    return resultado
+
+def normalizar_nombre_drive(nombre):
+    """
+    Normaliza nombres para comparar carpetas:
+    - Minúsculas.
+    - Sin acentos.
+    - Espacios y guiones uniformes.
+    """
+    nombre = str(nombre).strip().lower()
+
+    nombre = unicodedata.normalize("NFKD", nombre)
+    nombre = "".join(
+        c for c in nombre
+        if not unicodedata.combining(c)
+    )
+
+    nombre = re.sub(r"[_\s]+", "-", nombre)
+    nombre = re.sub(r"-+", "-", nombre)
+
+    return nombre.strip("-")
+
+
+def coincide_capitulo_drive(nombre, capitulo):
+    """
+    Comprueba si el nombre de una carpeta corresponde
+    exactamente al capítulo solicitado.
+
+    Ejemplos para capítulo 13:
+        13
+        RR-13
+        Capitulo 13
+        Chapter 13
+
+    No acepta:
+        130
+        13.1
+        Chapter 130
+    """
+
+    nombre = normalizar_nombre_drive(nombre)
+
+    capitulo = str(capitulo).strip()
+
+    try:
+        numero = float(capitulo)
+        if numero.is_integer():
+            capitulo = str(int(numero))
+        else:
+            capitulo = str(numero)
+    except (ValueError, TypeError):
+        return False
+
+    patron = (
+        r"(?<![\d.])"
+        + re.escape(capitulo)
+        + r"(?![\d.])"
+    )
+
+    return re.search(patron, nombre) is not None
+
+
+def listar_elementos_drive(service, folder_id):
+    """
+    Obtiene todos los elementos de una carpeta,
+    incluyendo resultados paginados.
+    """
+
+    elementos = []
+    page_token = None
+
+    while True:
+        respuesta = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields="nextPageToken,files(id,name,mimeType,size)",
+            pageSize=1000,
+            pageToken=page_token
+        ).execute()
+
+        elementos.extend(respuesta.get("files", []))
+
+        page_token = respuesta.get("nextPageToken")
+
+        if not page_token:
+            break
+
+    return elementos
+
+
+async def encontrar_drive_raw(channel, capitulo):
+    """
+    Busca:
+        1. Enlaces de Drive en los mensajes fijados.
+        2. Carpeta RAW.
+        3. Carpeta del capítulo solicitado.
+        4. Archivos dentro del capítulo.
+
+    Devuelve un diccionario con el resultado.
+    No modifica ni crea archivos.
+    """
+
+    resultado = {
+        "ok": False,
+        "motivo": None,
+        "drive_id": None,
+        "raw_id": None,
+        "raw_nombre": None,
+        "capitulo_id": None,
+        "capitulo_nombre": None,
+        "archivos": [],
+        "total_archivos": 0
+    }
+
+
+    # 1. LEER MENSAJES FIJADOS
+
+
+    try:
+        pins = await channel.pins()
+
+    except Exception as e:
+        resultado["motivo"] = f"No pude leer los mensajes fijados: {e}"
+        return resultado
+
+    drive_links = []
+
+    for msg in pins:
+        texto = (
+            (msg.content or "")
+            + "\n"
+            + " ".join(att.url for att in msg.attachments)
+        )
+
+        links = extract_drive_links(texto)
+
+        for link in links:
+            if link not in drive_links:
+                drive_links.append(link)
+
+    if not drive_links:
+        resultado["motivo"] = (
+            "No encontré ningún enlace de Google Drive "
+            "en los mensajes fijados."
+        )
+        return resultado
+
+
+    # 2. AUTENTICACIÓN
+
+
+    try:
+        creds = authenticate()
+        service = build("drive", "v3", credentials=creds)
+
+    except Exception as e:
+        resultado["motivo"] = f"Error de autenticación de Drive: {e}"
+        return resultado
+
+
+    # 3. BUSCAR CARPETA RAW
+
+
+    carpetas_raw = []
+
+    for link in drive_links:
+
+        folder_id = extract_id(link)
+
+        if not folder_id:
+            continue
+
+        try:
+            elementos = listar_elementos_drive(service, folder_id)
+
+            for item in elementos:
+
+                if item["mimeType"] != "application/vnd.google-apps.folder":
+                    continue
+
+                if normalizar_nombre_drive(item["name"]) == "raw":
+                    carpetas_raw.append({
+                        "drive_id": folder_id,
+                        "raw_id": item["id"],
+                        "raw_nombre": item["name"]
+                    })
+
+        except Exception as e:
+            print(
+                f"⚠️ Drive → Error revisando carpeta "
+                f"{folder_id}: {e}"
+            )
+
+    if not carpetas_raw:
+        resultado["motivo"] = (
+            "No encontré ninguna carpeta RAW "
+            "dentro de los enlaces fijados."
+        )
+        return resultado
+
+    # Evitar seleccionar una RAW arbitrariamente
+    if len(carpetas_raw) > 1:
+        resultado["motivo"] = (
+            f"Encontré {len(carpetas_raw)} carpetas RAW. "
+            "No puedo determinar cuál corresponde al proyecto."
+        )
+        resultado["coincidencias_raw"] = carpetas_raw
+        return resultado
+
+    raw = carpetas_raw[0]
+
+    resultado["drive_id"] = raw["drive_id"]
+    resultado["raw_id"] = raw["raw_id"]
+    resultado["raw_nombre"] = raw["raw_nombre"]
+
+
+    # 4. BUSCAR CAPÍTULO
+
+
+    try:
+        elementos_raw = listar_elementos_drive(
+            service,
+            raw["raw_id"]
+        )
+
+    except Exception as e:
+        resultado["motivo"] = f"Error leyendo RAW: {e}"
+        return resultado
+
+    carpetas_capitulo = []
+
+    for item in elementos_raw:
+
+        if item["mimeType"] != "application/vnd.google-apps.folder":
+            continue
+
+        if coincide_capitulo_drive(item["name"], capitulo):
+            carpetas_capitulo.append(item)
+
+    if not carpetas_capitulo:
+        resultado["motivo"] = (
+            f"No encontré el capítulo {capitulo} "
+            "dentro de RAW."
+        )
+        return resultado
+
+    if len(carpetas_capitulo) > 1:
+        resultado["motivo"] = (
+            f"Encontré varias carpetas que coinciden "
+            f"con el capítulo {capitulo}."
+        )
+        resultado["coincidencias_capitulo"] = [
+            {
+                "id": item["id"],
+                "nombre": item["name"]
+            }
+            for item in carpetas_capitulo
+        ]
+        return resultado
+
+    carpeta_cap = carpetas_capitulo[0]
+
+    resultado["capitulo_id"] = carpeta_cap["id"]
+    resultado["capitulo_nombre"] = carpeta_cap["name"]
+
+
+    # 5. COMPROBAR ARCHIVOS
+
+
+    try:
+        elementos_cap = listar_elementos_drive(
+            service,
+            carpeta_cap["id"]
+        )
+
+    except Exception as e:
+        resultado["motivo"] = (
+            f"Error leyendo la carpeta del capítulo: {e}"
+        )
+        return resultado
+
+    archivos = [
+        item for item in elementos_cap
+        if item["mimeType"] != "application/vnd.google-apps.folder"
+    ]
+
+    if not archivos:
+        resultado["motivo"] = (
+            f"La carpeta del capítulo {capitulo} existe, "
+            "pero no contiene archivos."
+        )
+        return resultado
+
+
+    # 6. RESULTADO CORRECTO
+
+
+    resultado["archivos"] = archivos
+    resultado["total_archivos"] = len(archivos)
+    resultado["ok"] = True
+
+    print(
+        f"✅ Drive → RAW validado\n"
+        f"   RAW: {raw['raw_nombre']}\n"
+        f"   Capítulo: {carpeta_cap['name']}\n"
+        f"   Archivos: {len(archivos)}"
+    )
+
+    return resultado
+
+# 💖 Editado por Rami
+def descargar_carpeta_drive(service, folder_id, destino):
+    """
+    Descarga recursivamente el contenido de una carpeta de Drive.
+    Conserva las subcarpetas y mide el tiempo y tamaño descargado.
+    No modifica los archivos originales de Drive.
+    """
+
+    destino = Path(destino)
+    destino.mkdir(parents=True, exist_ok=True)
+
+    inicio = time.perf_counter()
+    total_archivos = 0
+    total_bytes = 0
+    errores = []
+
+    MIME_CARPETA = "application/vnd.google-apps.folder"
+
+    def recorrer(carpeta_id, ruta_local):
+        nonlocal total_archivos, total_bytes
+
+        elementos = listar_elementos_drive(service, carpeta_id)
+
+        for item in elementos:
+            nombre = item["name"]
+            elemento_id = item["id"]
+            mime = item["mimeType"]
+
+            # Evitar rutas peligrosas o nombres inválidos
+            nombre_seguro = Path(nombre).name
+            if nombre_seguro in ("", ".", ".."):
+                errores.append(f"Nombre de archivo no válido: {nombre}")
+                continue
+
+            ruta_elemento = ruta_local / nombre_seguro
+
+            if mime == MIME_CARPETA:
+                ruta_elemento.mkdir(parents=True, exist_ok=True)
+                recorrer(elemento_id, ruta_elemento)
+                continue
+
+            # La API no descarga directamente documentos nativos
+            if mime.startswith("application/vnd.google-apps."):
+                errores.append(
+                    f"Archivo nativo de Google no compatible: {nombre} ({mime})"
+                )
+                continue
+
+            try:
+                request = service.files().get_media(fileId=elemento_id)
+
+                with open(ruta_elemento, "wb") as archivo:
+                    downloader = MediaIoBaseDownload(
+                        archivo,
+                        request,
+                        chunksize=1024 * 1024
+                    )
+
+                    terminado = False
+                    while not terminado:
+                        _, terminado = downloader.next_chunk()
+
+                tamano = ruta_elemento.stat().st_size
+                total_archivos += 1
+                total_bytes += tamano
+
+            except Exception as e:
+                # No dejar archivos parciales como si fueran válidos
+                try:
+                    if ruta_elemento.exists():
+                        ruta_elemento.unlink()
+                except OSError:
+                    pass
+
+                errores.append(f"{nombre}: {e}")
+
+    try:
+        recorrer(folder_id, destino)
+    except Exception as e:
+        errores.append(f"Error recorriendo la carpeta: {e}")
+
+    duracion = time.perf_counter() - inicio
+
+    resultado = {
+        "ok": len(errores) == 0 and total_archivos > 0,
+        "destino": str(destino),
+        "total_archivos": total_archivos,
+        "total_bytes": total_bytes,
+        "total_mb": round(total_bytes / (1024 * 1024), 2),
+        "duracion_segundos": round(duracion, 2),
+        "errores": errores
+    }
+
+    print(
+        f"{'✅' if resultado['ok'] else '⚠️'} DESCARGA DRIVE\n"
+        f"   Archivos: {total_archivos}\n"
+        f"   Tamaño: {resultado['total_mb']} MB\n"
+        f"   Tiempo: {resultado['duracion_segundos']} segundos\n"
+        f"   Destino: {destino}"
+    )
+
+    for error in errores:
+        print(f"   ⚠️ {error}")
+
+    return resultado
+
+# 💖 Editado por Rami
+def crear_request_assist(rol, capitulo, idioma, carpeta_destino):
+    """
+    Genera request.json según el rol:
+    TRAD  -> {"chapter": "26"}
+    CLEAN -> {"chapter": "15", "language": "ING"}
+    """
+
+    rol = str(rol).strip().upper()
+    capitulo = formato_capitulo(capitulo)
+
+    if rol == "CLEAN":
+        datos = {
+            "chapter": f"{capitulo}"
+        }
+
+    elif rol == "TRAD":
+        idioma = str(idioma or "").strip().upper()
+
+        if idioma not in ("KR", "ING", "INDO", "CHIN"):
+            raise ValueError(
+                f"Idioma no válido para CLEAN: {idioma}"
+            )
+
+        datos = {
+            "chapter": capitulo,
+            "language": idioma
+        }
+
+    else:
+        raise ValueError(f"Rol no válido: {rol}")
+
+    carpeta_destino = Path(carpeta_destino)
+    carpeta_destino.mkdir(parents=True, exist_ok=True)
+
+    ruta_request = carpeta_destino / "request.json"
+    ruta_temporal = carpeta_destino / "request.json.tmp"
+
+    with open(ruta_temporal, "w", encoding="utf-8") as archivo:
+        json.dump(datos, archivo, ensure_ascii=False, indent=4)
+
+    os.replace(ruta_temporal, ruta_request)
+
+    print(f"✅ REQUEST CREADA → {ruta_request}")
+    return str(ruta_request)
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -3002,67 +3711,6 @@ async def drive(ctx):
         embed_no_links.set_footer(text="Asegúrate de fijar el enlace DRIVE apropiadamente 💖")
         await ctx.send(embed=embed_no_links)
 
-# Comando !raw
-@bot.command()
-async def raw(ctx):
-    if ctx.guild.id not in GUILD_IDS:
-        return await ctx.send("❌ Este comando no está autorizado en este servidor.")
-    # Lógica completa de tu Saku_RAW aquí
-    await ctx.send("🔍 Buscando enlaces de RAW en los mensajes fijados...")
-    pinned = await ctx.channel.pins()
-
-    encontrados = False
-
-    for msg in pinned:
-        urls = re.findall(r"https?://[^\s>]+", msg.content)
-        for url in urls:
-            if any(x in url for x in [
-                "eternalmangas.org", "lectorjpg.com", "catharsisworld", "drive.google.com"
-            ]):
-                continue
-
-            encontrados = True
-
-            lineas = msg.content.splitlines()
-            texto_arriba = ""
-            for i, linea in enumerate(lineas):
-                if url in linea and i > 0:
-                    posible_texto = lineas[i - 1].strip()
-                    if posible_texto:
-                        texto_arriba = posible_texto
-                    break
-
-            dominio = re.search(r"https?://(?:www\.)?([^/]+)/", url)
-            sitio = dominio.group(1) if dominio else "Sitio desconocido"
-
-            titulo_embed = f"{texto_arriba} ({sitio.upper()})" if texto_arriba else f"{sitio.upper()}"
-
-            cap, evento = detectar_evento(url)
-
-            if cap:
-                embed = discord.Embed(
-                    title=titulo_embed,
-                    description=f"Último capítulo: {cap}",
-                    color=0x6AFF7A
-                )
-            else:
-                embed = discord.Embed(
-                    title=titulo_embed,
-                    description="❌ Estructura incompatible — Revisión manual requerida",
-                    color=0xFF5C5C
-                )
-
-            await ctx.send(embed=embed)
-
-    if not encontrados:
-        embed = discord.Embed(
-            title="🌸 Saku_RAW — *Sin enlaces válidos*",
-            description="No se encontraron enlaces de raws en los mensajes fijados.\n",
-            color=0xF8C8DC
-        )
-        embed.set_footer(text="Asegúrate de fijar mensajes con los enlaces correctos 💖")
-        await ctx.send(embed=embed)
-        
 # Comando !sitio
 @bot.command()
 async def sitio(ctx):
@@ -4609,7 +5257,7 @@ async def trad(ctx):
         asignacion_msg = await ctx.send(
             f"✏️ <@{ctx.author.id}>, **TRAD** — **Capítulo {capitulo}**.\n"
             f"📁 **Proyecto** — {proyecto}\n"
-            f"{extra_msg}\n\n"
+            f"{extra_msg}\n"
             f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
             f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
             f"3. !drive — Verifica que exista la RAW. Si ya tiene TRAD, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
@@ -4770,7 +5418,7 @@ async def clean(ctx):
         asignacion_msg = await ctx.send(
             f"🧹 <@{ctx.author.id}>, **CLEAN** — **Capítulo {capitulo}**.\n"
             f"📁 **Proyecto** — {proyecto}\n"
-            f"{extra_msg}\n\n"
+            f"{extra_msg}\n"
             f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
             f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
             f"3. !drive — Verifica que exista la RAW. Si ya tiene CLEAN, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
@@ -4958,7 +5606,7 @@ async def type(ctx):
             asignacion_msg = await ctx.send(
                 f"🎨 <@{ctx.author.id}>, **TYPE** — **Capítulo {capitulo}**.\n"
                 f"📁 **Proyecto** — {proyecto}\n"
-                f"{extra_msg}\n\n"
+                f"{extra_msg}\n"
                 f"**➳ Antes de empezar ⤵︎**```1. Si no tienes acceso al canal, solicítalo a QC | ADMIN.\n"
                 f"2. !sitio — Confirma que el capítulo NO esté publicado. Si ya está en línea, notifícalo.\n"
                 f"3. !drive — Verifica que existan RAW, TR y CL. Si ya tiene TYPE, notifícalo y no reacciones a esta asignación.```**➳ Durante tu proceso ⤵︎**\n"
@@ -6306,5 +6954,143 @@ async def revisar_calendario():
 
         await canal_alertas.send(final_msg)
 
+# Comando !assist
+@bot.command(name="assist")
+async def assist(
+    ctx,
+    rol: str = None,
+    canal: discord.TextChannel = None,
+    capitulo: str = None,
+    idioma: str = None
+):
+    # 1. RESTRICCIÓN DE CANAL
+    if ctx.channel.id != NANI_ASSIST_CHANNEL_ID:
+        return
+    # 2. SIN ARGUMENTOS: MOSTRAR ASIGNACIONES
+    argumentos = [canal, rol, capitulo, idioma]
+    if all(arg is None for arg in argumentos):
+        await ctx.send("🔍 Consultando tus asignaciones...")
+        try:
+            asignaciones = obtener_asignaciones_personales(
+                ctx.author.id
+            )
+        except Exception as e:
+            return await ctx.send(
+                f"❌ Error consultando tus asignaciones:\n"
+                f"```{str(e)[:1500]}```"
+            )
+        if not asignaciones:
+            return await ctx.send(
+                "🌸 No tienes asignaciones activas actualmente."
+            )
+        orden_roles = {
+            "TRAD": 0,
+            "CLEAN": 1,
+            "TYPE": 2
+        }
+        asignaciones.sort(
+            key=lambda x: (
+                orden_roles[x["rol"]],
+                x["cap_num"],
+                x["proyecto"]
+            )
+        )
+        datos = []
+        for item in asignaciones:
+            datos.append([
+                item["rol"],
+                item["proyecto"],
+                formato_capitulo(item["capitulo"]),
+                item["idioma"]
+            ])
+        tabla = construir_tabla(
+            ["ROL", "PROYECTO", "CAP", "IDIOMA"],
+            datos
+        )
+        await ctx.send("📌 **ASIGNACIONES ACTIVAS**")
+        await enviar_tabla(ctx, tabla)
+        await ctx.send(
+            f"## *Formato de solicitud:*\n"
+            f"!assist **`ROL`  `#proyecto`  `Capítulo`  `Idioma`**"
+        )
+        return
+    # 3. VALIDAR ARGUMENTOS DEL COMANDO
+    if rol is None or canal is None or capitulo is None:
+        return await ctx.send(
+            "❌ **Faltan argumentos.**\n\n"
+            "**TRAD:**\n"
+            "`!assist TRAD #proyecto 13 ING`\n\n"
+            "**CLEAN:**\n"
+            "`!assist CLEAN #proyecto 15`"
+        )
+    rol = rol.strip().upper()
+    # 4. CREAR MENSAJE DE ESTADO
+    mensaje_estado = await ctx.send(
+        "🔍 **Validando solicitud...**"
+    )
+    # 5. PASO 1 — VALIDAR ASIGNACIÓN
+    await mensaje_estado.edit(
+        content="🔐 **Comprobando asignaciones...**"
+    )
+    try:
+        validacion = validar_asignacion_assist(
+            discord_id=ctx.author.id,
+            canal=canal,
+            rol=rol,
+            capitulo=capitulo,
+            idioma=idioma
+        )
+    except Exception as e:
+        print(
+            f"❌ ASSIST → Error validando asignación: {e}"
+        )
+        return await mensaje_estado.edit(
+            content="❌ **Error al consultar las asignaciones.**"
+        )
+    if not validacion["ok"]:
+        print(
+            f"⛔ ASSIST → Solicitud rechazada: "
+            f"{validacion['motivo']}"
+        )
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **Solicitud rechazada.**\n"
+                f"```{validacion['motivo']}```"
+            )
+        )
+    # 6. PASO 2 — VALIDAR GOOGLE DRIVE
+    await mensaje_estado.edit(
+        content="☁️ **Comprobando documentación en Google Drive...**"
+    )
+    resultado_drive = await encontrar_drive_raw(
+        canal,
+        validacion["capitulo"]
+    )
+    if not resultado_drive["ok"]:
+        print(
+            f"⛔ ASSIST → Error de Drive: "
+            f"{resultado_drive['motivo']}"
+        )
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **No se pudo validar la documentación.**\n"
+                f"```{resultado_drive['motivo']}```"
+            )
+        )
+    # 7. VALIDACIONES COMPLETADAS
+    print(
+        f"✨ ASSIST → VALIDACIONES COMPLETADAS\n"
+        f"   Usuario: {ctx.author.id}\n"
+        f"   Proyecto: {validacion['proyecto']}\n"
+        f"   Rol: {rol}\n"
+        f"   Capítulo: {validacion['capitulo']}\n"
+        f"   Idioma: {validacion['idioma'] or 'N/A'}\n"
+        f"   RAW: {resultado_drive['raw_nombre']}\n"
+        f"   Carpeta: {resultado_drive['capitulo_nombre']}\n"
+        f"   Archivos: {resultado_drive['total_archivos']}"
+    )
+    await mensaje_estado.edit(
+        content="✨ **Validación completada, iniciando proceso...**"
+    )
 # Ejecutar bot
 bot.run(TOKEN)
