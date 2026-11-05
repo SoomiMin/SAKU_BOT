@@ -2697,147 +2697,104 @@ def obtener_id_asignado(valor):
     """
     if not valor:
         return ""
-
     partes = str(valor).split("/")
     posible_id = partes[-1].strip()
-
     return posible_id if posible_id.isdigit() else ""
-
-
 def obtener_idioma(row):
     """
     H: KR
     I: ING
     J: INDO
     K: CHIN
-
     Solo devuelve un idioma si existe exactamente un 1.
     """
     idiomas = ["KR", "ING", "INDO", "CHIN"]
-
     seleccionados = []
-
     for indice, idioma in enumerate(idiomas, start=7):
         valor = str(row[indice]).strip().upper()
-
         if valor in ("1", "1.0"):
             seleccionados.append(idioma)
-
     if len(seleccionados) == 1:
         return seleccionados[0]
-
     return "—"
-
-
 def formato_capitulo(valor):
     try:
         numero = float(valor)
         return str(int(numero)) if numero.is_integer() else str(numero)
     except (ValueError, TypeError):
         return str(valor)
-
-
 def construir_tabla(headers, datos):
     """
     Construye una tabla ASCII con anchos dinámicos.
     """
     if not datos:
         return ""
-
     anchos = [
         max(len(str(fila[i])) for fila in [headers] + datos)
         for i in range(len(headers))
     ]
-
     def separador():
         return "+" + "+".join(
             "-" * (ancho + 2) for ancho in anchos
         ) + "+"
-
     def fila_texto(fila):
         return "| " + " | ".join(
             str(fila[i]).ljust(anchos[i])
             for i in range(len(headers))
         ) + " |"
-
     lineas = [
         separador(),
         fila_texto(headers),
         separador()
     ]
-
     for fila in datos:
         lineas.append(fila_texto(fila))
         lineas.append(separador())
-
     return "\n".join(lineas)
-
-
 async def enviar_tabla(ctx, texto):
     """
     Divide las tablas sin cortar filas ni bloques de código.
     """
     lineas = texto.splitlines()
     chunk = ""
-
     for linea in lineas:
         candidato = chunk + linea + "\n"
-
         if len(candidato) > 1800 and chunk:
             await ctx.send(f"```{chunk}```")
             chunk = ""
-
         chunk += linea + "\n"
-
     if chunk:
         await ctx.send(f"```{chunk}```")
-
 def obtener_asignaciones_personales(discord_id):
-
     data = sheet.values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=f"{SHEET_NAME3}!A:Y"
     ).execute()
-
     rows = data.get("values", [])
-
     asignaciones = []
-
     orden_roles = [
         ("TRAD", 4, 11),
         ("CLEAN", 5, 12),
         ("TYPE", 6, 13)
     ]
-
     for i in range(1, len(rows)):
-
         row = rows[i] + [""] * max(0, 24 - len(rows[i]))
-
         proyecto = recortar_proyecto(row[1])[:15]
         capitulo = row[2]
-
         cap_num = parse_cap(capitulo)
-
         if cap_num is None:
             continue
-
         for rol, col_estado, col_usuario in orden_roles:
-
             estado = str(row[col_estado]).strip().upper()
-
             if not estado.startswith("ASIGNADO"):
                 continue
-
             usuario_id = obtener_id_asignado(
                 row[col_usuario]
             )
-
             if usuario_id != str(discord_id):
                 continue
-
             # El idioma solo se muestra para TRAD
             idioma = obtener_idioma(row) if rol == "TRAD" else ""
-
             asignaciones.append({
                 "rol": rol,
                 "proyecto": proyecto,
@@ -2845,7 +2802,6 @@ def obtener_asignaciones_personales(discord_id):
                 "cap_num": cap_num,
                 "idioma": idioma
             })
-
     return asignaciones
 def validar_asignacion_assist(
     discord_id,
@@ -2857,11 +2813,9 @@ def validar_asignacion_assist(
     """
     Comprueba directamente en ASIGNACIONES que el usuario
     tenga asignado el proyecto, capítulo y rol solicitados.
-
     Utiliza el nombre COMPLETO del proyecto de la hoja,
     no la abreviación utilizada en la cuadrícula.
     """
-
     resultado = {
         "ok": False,
         "motivo": None,
@@ -2870,161 +2824,106 @@ def validar_asignacion_assist(
         "rol": rol,
         "idioma": None
     }
-
     rol = str(rol).strip().upper()
     idioma = str(idioma or "").strip().upper()
-
-
     # 1. VALIDAR ROL
-
-
     columnas = {
         "TRAD": (4, 11),
         "CLEAN": (5, 12)
     }
-
     if rol not in columnas:
         resultado["motivo"] = (
             "Rol no válido para NANI ASSIST. "
             "Por ahora solamente están habilitados TRAD y CLEAN."
         )
         return resultado
-
-
     # 2. VALIDAR IDIOMA
-
-
     idiomas_validos = ["KR", "ING", "INDO", "CHIN"]
-
     if rol == "TRAD":
-
         if idioma not in idiomas_validos:
             resultado["motivo"] = (
                 "Para TRAD debes indicar un idioma válido: "
                 "KR, ING, INDO o CHIN."
             )
             return resultado
-
     elif idioma:
         resultado["motivo"] = (
             "CLEAN no necesita idioma. "
             "Utiliza el comando sin ese argumento."
         )
         return resultado
-
-
     # 3. VALIDAR CAPÍTULO
-
-
     cap_solicitado = parse_cap(capitulo)
-
     if cap_solicitado is None:
         resultado["motivo"] = (
             f"El capítulo '{capitulo}' no tiene un formato válido."
         )
         return resultado
-
-
     # 4. LEER ASIGNACIONES
-
-
     try:
         data = sheet.values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME3}!A:Y"
         ).execute()
-
         rows = data.get("values", [])
-
     except Exception as e:
         resultado["motivo"] = (
             f"No pude consultar ASIGNACIONES: {e}"
         )
         return resultado
-
-
     # 5. COMPARAR PROYECTO, CAPÍTULO Y USUARIO
-
-
     canal_normalizado = normalizar_nombre_drive(canal.name)
-
     col_estado, col_usuario = columnas[rol]
-
     coincidencias = []
-
     for i in range(1, len(rows)):
-
         row = rows[i] + [""] * max(0, 24 - len(rows[i]))
-
         proyecto_original = str(row[1]).strip()
-
         if not proyecto_original:
             continue
-
         # Comparar el nombre completo, sin la almohadilla
         proyecto_normalizado = normalizar_nombre_drive(
             proyecto_original.lstrip("#")
         )
-
         if proyecto_normalizado != canal_normalizado:
             continue
-
         cap_fila = parse_cap(row[2])
-
         if cap_fila is None or cap_fila != cap_solicitado:
             continue
-
         estado = str(row[col_estado]).strip().upper()
-
         if not estado.startswith("ASIGNADO"):
             continue
-
         usuario_id = obtener_id_asignado(row[col_usuario])
-
         if usuario_id != str(discord_id):
             continue
-
         # --------------------------------------------------
         # 6. VALIDAR IDIOMA DE TRAD
         # --------------------------------------------------
-
         idioma_fila = ""
-
         if rol == "TRAD":
-
             idioma_fila = obtener_idioma(row)
-
             if idioma_fila != idioma:
                 continue
-
         coincidencias.append({
             "proyecto": proyecto_original,
             "capitulo": formato_capitulo(row[2]),
             "rol": rol,
             "idioma": idioma_fila
         })
-
-
     # 7. RESULTADO
-
-
     if not coincidencias:
         resultado["motivo"] = (
             "No encontré una asignación activa que coincida "
             "con tu usuario, proyecto, capítulo, rol e idioma."
         )
         return resultado
-
     if len(coincidencias) > 1:
         resultado["motivo"] = (
             "Encontré varias asignaciones coincidentes. "
             "No continuaré para evitar procesar una solicitud ambigua."
         )
         return resultado
-
     resultado.update(coincidencias[0])
     resultado["ok"] = True
-
     print(
         f"✅ ASSIST → Asignación validada\n"
         f"   Usuario: {discord_id}\n"
@@ -3033,9 +2932,7 @@ def validar_asignacion_assist(
         f"   Capítulo: {resultado['capitulo']}\n"
         f"   Idioma: {resultado['idioma'] or 'N/A'}"
     )
-
     return resultado
-
 def normalizar_nombre_drive(nombre):
     """
     Normaliza nombres para comparar carpetas:
@@ -3044,40 +2941,30 @@ def normalizar_nombre_drive(nombre):
     - Espacios y guiones uniformes.
     """
     nombre = str(nombre).strip().lower()
-
     nombre = unicodedata.normalize("NFKD", nombre)
     nombre = "".join(
         c for c in nombre
         if not unicodedata.combining(c)
     )
-
     nombre = re.sub(r"[_\s]+", "-", nombre)
     nombre = re.sub(r"-+", "-", nombre)
-
     return nombre.strip("-")
-
-
 def coincide_capitulo_drive(nombre, capitulo):
     """
     Comprueba si el nombre de una carpeta corresponde
     exactamente al capítulo solicitado.
-
     Ejemplos para capítulo 13:
         13
         RR-13
         Capitulo 13
         Chapter 13
-
     No acepta:
         130
         13.1
         Chapter 130
     """
-
     nombre = normalizar_nombre_drive(nombre)
-
     capitulo = str(capitulo).strip()
-
     try:
         numero = float(capitulo)
         if numero.is_integer():
@@ -3086,25 +2973,19 @@ def coincide_capitulo_drive(nombre, capitulo):
             capitulo = str(numero)
     except (ValueError, TypeError):
         return False
-
     patron = (
         r"(?<![\d.])"
         + re.escape(capitulo)
         + r"(?![\d.])"
     )
-
     return re.search(patron, nombre) is not None
-
-
 def listar_elementos_drive(service, folder_id):
     """
     Obtiene todos los elementos de una carpeta,
     incluyendo resultados paginados.
     """
-
     elementos = []
     page_token = None
-
     while True:
         respuesta = service.files().list(
             q=f"'{folder_id}' in parents and trashed=false",
@@ -3112,33 +2993,172 @@ def listar_elementos_drive(service, folder_id):
             pageSize=1000,
             pageToken=page_token
         ).execute()
-
         elementos.extend(respuesta.get("files", []))
-
         page_token = respuesta.get("nextPageToken")
-
         if not page_token:
             break
-
     return elementos
-
-
-async def encontrar_drive_raw(channel, capitulo):
+# 💖 Editado por Rami
+def validar_carpeta_clean_drive(service, elementos_padre, capitulo):
+    """
+    Busca CLEAN o Limpieza al mismo nivel que RAW.
+    Comprueba si ya existe una carpeta con el nombre exacto
+    del capítulo solicitado y si contiene imágenes.
+    Devuelve el ID de CLEAN/Limpieza para reutilizarlo
+    posteriormente durante la subida de resultados.
+    """
+    resultado = {
+        "ok": False,
+        "motivo": None,
+        "clean_id": None,
+        "clean_nombre": None,
+        "capitulo_terminado": False
+    }
+    MIME_CARPETA = "application/vnd.google-apps.folder"
+    # --------------------------------------------------
+    # 1. LOCALIZAR CLEAN / LIMPIEZA
+    # --------------------------------------------------
+    carpetas_clean = [
+        item for item in elementos_padre
+        if item["mimeType"] == MIME_CARPETA
+        and normalizar_nombre_drive(item["name"]) in (
+            "clean",
+            "limpieza",
+            "limpios"
+        )
+    ]
+    if not carpetas_clean:
+        resultado["motivo"] = (
+            "No encontré ninguna carpeta CLEAN o Limpieza "
+            "al mismo nivel que RAW."
+        )
+        return resultado
+    if len(carpetas_clean) > 1:
+        resultado["motivo"] = (
+            "Encontré varias carpetas CLEAN/Limpieza. "
+            "No puedo determinar cuál utilizar."
+        )
+        return resultado
+    carpeta_clean = carpetas_clean[0]
+    resultado["clean_id"] = carpeta_clean["id"]
+    resultado["clean_nombre"] = carpeta_clean["name"]
+    # --------------------------------------------------
+    # 2. LEER CONTENIDO DE CLEAN / LIMPIEZA
+    # --------------------------------------------------
+    try:
+        elementos_clean = listar_elementos_drive(
+            service,
+            carpeta_clean["id"]
+        )
+    except Exception as e:
+        resultado["motivo"] = (
+            f"No pude consultar la carpeta "
+            f"{carpeta_clean['name']}: {e}"
+        )
+        return resultado
+    # --------------------------------------------------
+    # 3. BUSCAR EL CAPÍTULO EXACTO O PROCESADO (_PR)
+    # --------------------------------------------------
+    capitulo_normalizado = normalizar_nombre_drive(
+        formato_capitulo(capitulo)
+    )
+    carpetas_capitulo = [
+        item for item in elementos_clean
+        if (
+            item["mimeType"] == MIME_CARPETA
+            and normalizar_nombre_drive(item["name"]) in (
+                capitulo_normalizado,
+                f"{capitulo_normalizado}-pr"
+            )
+        )
+    ]
+    if len(carpetas_capitulo) > 1:
+        resultado["motivo"] = (
+            f"Encontré varias carpetas correspondientes "
+            f"al capítulo {capitulo} dentro de "
+            f"{carpeta_clean['name']}."
+        )
+        return resultado
+    if carpetas_capitulo:
+        carpeta_cap = carpetas_capitulo[0]
+        nombre_capitulo = normalizar_nombre_drive(
+            carpeta_cap["name"]
+        )
+        # --------------------------------------------------
+        # 4. DETECTAR CAPÍTULO PROCESADO POR ASSIST
+        # --------------------------------------------------
+        if nombre_capitulo.endswith("-pr"):
+            resultado["capitulo_terminado"] = True
+            resultado["motivo"] = (
+                f"El capítulo {capitulo} ya fue procesado "
+                f"anteriormente por NANI ASSIST "
+                f"({carpeta_cap['name']})."
+            )
+            return resultado
+        # --------------------------------------------------
+        # 5. COMPROBAR SI CONTIENE IMÁGENES
+        # --------------------------------------------------
+        try:
+            elementos_cap = listar_elementos_drive(
+                service,
+                carpeta_cap["id"]
+            )
+        except Exception as e:
+            resultado["motivo"] = (
+                f"No pude revisar el capítulo terminado: {e}"
+            )
+            return resultado
+        extensiones_imagen = (
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp"
+        )
+        imagenes = [
+            item for item in elementos_cap
+            if (
+                item["mimeType"].startswith("image/")
+                or item["name"].lower().endswith(
+                    extensiones_imagen
+                )
+            )
+        ]
+        if imagenes:
+            resultado["capitulo_terminado"] = True
+            resultado["motivo"] = (
+                f"El capítulo {capitulo} ya tiene "
+                f"{len(imagenes)} imágenes dentro de "
+                f"{carpeta_clean['name']}. "
+                "Se considera terminado y no puede procesarse nuevamente."
+            )
+            return resultado
+    # --------------------------------------------------
+    # 6. VALIDACIÓN CORRECTA
+    # --------------------------------------------------
+    resultado["ok"] = True
+    print(
+        f"✅ CLEAN → Carpeta validada\n"
+        f"   Carpeta: {resultado['clean_nombre']}\n"
+        f"   ID: {resultado['clean_id']}\n"
+        f"   Capítulo terminado: NO"
+    )
+    return resultado
+async def encontrar_drive_raw(channel, capitulo, rol="TRAD"):
     """
     Busca:
         1. Enlaces de Drive en los mensajes fijados.
         2. Carpeta RAW.
         3. Carpeta del capítulo solicitado.
         4. Archivos dentro del capítulo.
-
     Devuelve un diccionario con el resultado.
     No modifica ni crea archivos.
     """
-
     resultado = {
         "ok": False,
         "motivo": None,
         "drive_id": None,
+        "clean_id": None,
+        "clean_nombre": None,
         "raw_id": None,
         "raw_nombre": None,
         "capitulo_id": None,
@@ -3146,93 +3166,65 @@ async def encontrar_drive_raw(channel, capitulo):
         "archivos": [],
         "total_archivos": 0
     }
-
-
     # 1. LEER MENSAJES FIJADOS
-
-
     try:
         pins = await channel.pins()
-
     except Exception as e:
         resultado["motivo"] = f"No pude leer los mensajes fijados: {e}"
         return resultado
-
     drive_links = []
-
     for msg in pins:
         texto = (
             (msg.content or "")
             + "\n"
             + " ".join(att.url for att in msg.attachments)
         )
-
         links = extract_drive_links(texto)
-
         for link in links:
             if link not in drive_links:
                 drive_links.append(link)
-
     if not drive_links:
         resultado["motivo"] = (
             "No encontré ningún enlace de Google Drive "
             "en los mensajes fijados."
         )
         return resultado
-
-
     # 2. AUTENTICACIÓN
-
-
     try:
         creds = authenticate()
         service = build("drive", "v3", credentials=creds)
-
     except Exception as e:
         resultado["motivo"] = f"Error de autenticación de Drive: {e}"
         return resultado
-
-
     # 3. BUSCAR CARPETA RAW
-
-
     carpetas_raw = []
-
     for link in drive_links:
-
         folder_id = extract_id(link)
-
         if not folder_id:
             continue
-
         try:
             elementos = listar_elementos_drive(service, folder_id)
-
             for item in elementos:
-
                 if item["mimeType"] != "application/vnd.google-apps.folder":
                     continue
-
                 if normalizar_nombre_drive(item["name"]) == "raw":
                     carpetas_raw.append({
                         "drive_id": folder_id,
                         "raw_id": item["id"],
-                        "raw_nombre": item["name"]
+                        "raw_nombre": item["name"],
+                        "elementos_padre": elementos
                     })
-
         except Exception as e:
             print(
                 f"⚠️ Drive → Error revisando carpeta "
                 f"{folder_id}: {e}"
             )
-
     if not carpetas_raw:
         resultado["motivo"] = (
             "No encontré ninguna carpeta RAW "
             "dentro de los enlaces fijados."
         )
         return resultado
-
     # Evitar seleccionar una RAW arbitrariamente
     if len(carpetas_raw) > 1:
         resultado["motivo"] = (
@@ -3241,44 +3233,31 @@ async def encontrar_drive_raw(channel, capitulo):
         )
         resultado["coincidencias_raw"] = carpetas_raw
         return resultado
-
     raw = carpetas_raw[0]
-
     resultado["drive_id"] = raw["drive_id"]
     resultado["raw_id"] = raw["raw_id"]
     resultado["raw_nombre"] = raw["raw_nombre"]
-
-
     # 4. BUSCAR CAPÍTULO
-
-
     try:
         elementos_raw = listar_elementos_drive(
             service,
             raw["raw_id"]
         )
-
     except Exception as e:
         resultado["motivo"] = f"Error leyendo RAW: {e}"
         return resultado
-
     carpetas_capitulo = []
-
     for item in elementos_raw:
-
         if item["mimeType"] != "application/vnd.google-apps.folder":
             continue
-
         if coincide_capitulo_drive(item["name"], capitulo):
             carpetas_capitulo.append(item)
-
     if not carpetas_capitulo:
         resultado["motivo"] = (
             f"No encontré el capítulo {capitulo} "
             "dentro de RAW."
         )
         return resultado
-
     if len(carpetas_capitulo) > 1:
         resultado["motivo"] = (
             f"Encontré varias carpetas que coinciden "
@@ -3292,57 +3271,63 @@ async def encontrar_drive_raw(channel, capitulo):
             for item in carpetas_capitulo
         ]
         return resultado
-
     carpeta_cap = carpetas_capitulo[0]
-
     resultado["capitulo_id"] = carpeta_cap["id"]
     resultado["capitulo_nombre"] = carpeta_cap["name"]
-
-
     # 5. COMPROBAR ARCHIVOS
-
-
     try:
         elementos_cap = listar_elementos_drive(
             service,
             carpeta_cap["id"]
         )
-
     except Exception as e:
         resultado["motivo"] = (
             f"Error leyendo la carpeta del capítulo: {e}"
         )
         return resultado
-
     archivos = [
         item for item in elementos_cap
         if item["mimeType"] != "application/vnd.google-apps.folder"
     ]
-
     if not archivos:
         resultado["motivo"] = (
             f"La carpeta del capítulo {capitulo} existe, "
             "pero no contiene archivos."
         )
         return resultado
-
-
     # 6. RESULTADO CORRECTO
-
-
     resultado["archivos"] = archivos
     resultado["total_archivos"] = len(archivos)
+    # --------------------------------------------------
+    # 7. VALIDAR CLEAN / LIMPIEZA SI EL ROL ES CLEAN
+    # --------------------------------------------------
+    if rol == "CLEAN":
+        resultado_clean = validar_carpeta_clean_drive(
+            service,
+            raw["elementos_padre"],
+            capitulo
+        )
+        if not resultado_clean["ok"]:
+            resultado["motivo"] = resultado_clean["motivo"]
+            print(
+                f"⛔ CLEAN → Solicitud detenida\n"
+                f"   Motivo: {resultado_clean['motivo']}"
+            )
+            return resultado
+        # Guardar el ID para la futura subida a Drive
+        resultado["clean_id"] = resultado_clean["clean_id"]
+        resultado["clean_nombre"] = resultado_clean["clean_nombre"]
+    # --------------------------------------------------
+    # 8. RESULTADO CORRECTO
+    # --------------------------------------------------
     resultado["ok"] = True
-
     print(
         f"✅ Drive → RAW validado\n"
         f"   RAW: {raw['raw_nombre']}\n"
         f"   Capítulo: {carpeta_cap['name']}\n"
         f"   Archivos: {len(archivos)}"
     )
-
     return resultado
-
 # 💖 Editado por Rami
 def descargar_carpeta_drive(service, folder_id, destino):
     """
@@ -3350,65 +3335,50 @@ def descargar_carpeta_drive(service, folder_id, destino):
     Conserva las subcarpetas y mide el tiempo y tamaño descargado.
     No modifica los archivos originales de Drive.
     """
-
     destino = Path(destino)
     destino.mkdir(parents=True, exist_ok=True)
-
     inicio = time.perf_counter()
     total_archivos = 0
     total_bytes = 0
     errores = []
-
     MIME_CARPETA = "application/vnd.google-apps.folder"
-
     def recorrer(carpeta_id, ruta_local):
         nonlocal total_archivos, total_bytes
-
         elementos = listar_elementos_drive(service, carpeta_id)
-
         for item in elementos:
             nombre = item["name"]
             elemento_id = item["id"]
             mime = item["mimeType"]
-
             # Evitar rutas peligrosas o nombres inválidos
             nombre_seguro = Path(nombre).name
             if nombre_seguro in ("", ".", ".."):
                 errores.append(f"Nombre de archivo no válido: {nombre}")
                 continue
-
             ruta_elemento = ruta_local / nombre_seguro
-
             if mime == MIME_CARPETA:
                 ruta_elemento.mkdir(parents=True, exist_ok=True)
                 recorrer(elemento_id, ruta_elemento)
                 continue
-
             # La API no descarga directamente documentos nativos
             if mime.startswith("application/vnd.google-apps."):
                 errores.append(
                     f"Archivo nativo de Google no compatible: {nombre} ({mime})"
                 )
                 continue
-
             try:
                 request = service.files().get_media(fileId=elemento_id)
-
                 with open(ruta_elemento, "wb") as archivo:
                     downloader = MediaIoBaseDownload(
                         archivo,
                         request,
                         chunksize=1024 * 1024
                     )
-
                     terminado = False
                     while not terminado:
                         _, terminado = downloader.next_chunk()
-
                 tamano = ruta_elemento.stat().st_size
                 total_archivos += 1
                 total_bytes += tamano
-
             except Exception as e:
                 # No dejar archivos parciales como si fueran válidos
                 try:
@@ -3416,16 +3386,12 @@ def descargar_carpeta_drive(service, folder_id, destino):
                         ruta_elemento.unlink()
                 except OSError:
                     pass
-
                 errores.append(f"{nombre}: {e}")
-
     try:
         recorrer(folder_id, destino)
     except Exception as e:
         errores.append(f"Error recorriendo la carpeta: {e}")
-
     duracion = time.perf_counter() - inicio
-
     resultado = {
         "ok": len(errores) == 0 and total_archivos > 0,
         "destino": str(destino),
@@ -3435,7 +3401,6 @@ def descargar_carpeta_drive(service, folder_id, destino):
         "duracion_segundos": round(duracion, 2),
         "errores": errores
     }
-
     print(
         f"{'✅' if resultado['ok'] else '⚠️'} DESCARGA DRIVE\n"
         f"   Archivos: {total_archivos}\n"
@@ -3443,12 +3408,9 @@ def descargar_carpeta_drive(service, folder_id, destino):
         f"   Tiempo: {resultado['duracion_segundos']} segundos\n"
         f"   Destino: {destino}"
     )
-
     for error in errores:
         print(f"   ⚠️ {error}")
-
     return resultado
-
 # 💖 Editado por Rami
 def crear_request_assist(rol, capitulo, idioma, carpeta_destino):
     """
@@ -3456,42 +3418,31 @@ def crear_request_assist(rol, capitulo, idioma, carpeta_destino):
     TRAD  -> {"chapter": "26"}
     CLEAN -> {"chapter": "15", "language": "ING"}
     """
-
     rol = str(rol).strip().upper()
     capitulo = formato_capitulo(capitulo)
-
     if rol == "CLEAN":
         datos = {
             "chapter": f"{capitulo}"
         }
-
     elif rol == "TRAD":
         idioma = str(idioma or "").strip().upper()
-
         if idioma not in ("KR", "ING", "INDO", "CHIN"):
             raise ValueError(
                 f"Idioma no válido para CLEAN: {idioma}"
             )
-
         datos = {
             "chapter": capitulo,
             "language": idioma
         }
-
     else:
         raise ValueError(f"Rol no válido: {rol}")
-
     carpeta_destino = Path(carpeta_destino)
     carpeta_destino.mkdir(parents=True, exist_ok=True)
-
     ruta_request = carpeta_destino / "request.json"
     ruta_temporal = carpeta_destino / "request.json.tmp"
-
     with open(ruta_temporal, "w", encoding="utf-8") as archivo:
         json.dump(datos, archivo, ensure_ascii=False, indent=4)
-
     os.replace(ruta_temporal, ruta_request)
-
     print(f"✅ REQUEST CREADA → {ruta_request}")
     return str(ruta_request)
 
@@ -7064,7 +7015,8 @@ async def assist(
     )
     resultado_drive = await encontrar_drive_raw(
         canal,
-        validacion["capitulo"]
+        validacion["capitulo"],
+        rol=rol
     )
     if not resultado_drive["ok"]:
         print(
