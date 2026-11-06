@@ -7120,7 +7120,9 @@ async def assist(
         f"   Idioma: {validacion['idioma'] or 'N/A'}\n"
         f"   RAW: {resultado_drive['raw_nombre']}\n"
         f"   Carpeta: {resultado_drive['capitulo_nombre']}\n"
-        f"   Archivos: {resultado_drive['total_archivos']}"
+        f"   Archivos: {resultado_drive['total_archivos']}\n"
+        f"   CLEAN: {resultado_drive['clean_nombre'] or 'N/A'}\n"
+        f"   CLEAN ID: {resultado_drive['clean_id'] or 'N/A'}"
     )
     # --------------------------------------------------
     # 8. PREPARAR DESCARGA
