@@ -3527,6 +3527,57 @@ def authenticate_assist():
 
     return creds
 
+# 💖 Editado por Rami
+def crear_drive_upload(rol, capitulo, resultado_drive, carpeta_destino):
+    """
+    Genera drive_upload.json solo para CLEAN.
+
+    Ejemplo:
+    {
+        "chapter": "4",
+        "clean_id": "iddrive",
+        "clean_name": "CLEAN"
+    }
+    """
+
+    rol = str(rol).strip().upper()
+
+    if rol != "CLEAN":
+        raise ValueError(
+            "drive_upload.json solamente se utiliza para CLEAN."
+        )
+
+    capitulo = formato_capitulo(capitulo)
+
+    clean_id = resultado_drive.get("clean_id")
+    clean_nombre = resultado_drive.get("clean_nombre")
+
+    if not clean_id:
+        raise ValueError(
+            "No se recibió el ID de la carpeta CLEAN."
+        )
+
+    datos = {
+        "chapter": capitulo,
+        "clean_id": clean_id,
+        "clean_name": clean_nombre
+    }
+
+    carpeta_destino = Path(carpeta_destino)
+    carpeta_destino.mkdir(parents=True, exist_ok=True)
+
+    ruta_drive_upload = carpeta_destino / "drive_upload.json"
+    ruta_drive_temporal = carpeta_destino / "drive_upload.json.tmp"
+
+    with open(ruta_drive_temporal, "w", encoding="utf-8") as archivo:
+        json.dump(datos, archivo, ensure_ascii=False, indent=4)
+
+    os.replace(ruta_drive_temporal, ruta_drive_upload)
+
+    print(f"✅ DRIVE_JSON CREADO → {ruta_drive_upload}")
+
+    return str(ruta_drive_upload)
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -7213,6 +7264,13 @@ async def assist(
             idioma=validacion["idioma"],
             carpeta_destino=destino
         )
+        if rol == "CLEAN":
+            crear_drive_upload(
+                rol=rol,
+                capitulo=validacion["capitulo"],
+                resultado_drive=resultado_drive,
+                carpeta_destino=destino
+            )
 
     except Exception as e:
         print(
