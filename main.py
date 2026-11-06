@@ -3191,7 +3191,7 @@ async def encontrar_drive_raw(channel, capitulo, rol="TRAD"):
         return resultado
     # 2. AUTENTICACIÓN
     try:
-        creds = authenticate()
+        creds = authenticate_assist()
         service = build("drive", "v3", credentials=creds)
     except Exception as e:
         resultado["motivo"] = f"Error de autenticación de Drive: {e}"
@@ -3462,7 +3462,7 @@ def ejecutar_descarga_assist(resultado_drive, destino):
     Autentica Google Drive y descarga la carpeta RAW
     en el destino indicado.
     """
-    creds = authenticate()
+    creds = authenticate_assist()
     service = build("drive", "v3", credentials=creds)
 
     return descargar_carpeta_drive(
