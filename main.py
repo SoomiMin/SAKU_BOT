@@ -3415,37 +3415,61 @@ def descargar_carpeta_drive(service, folder_id, destino):
 def crear_request_assist(rol, capitulo, idioma, carpeta_destino):
     """
     Genera request.json según el rol:
-    TRAD  -> {"chapter": "26"}
-    CLEAN -> {"chapter": "15", "language": "ING"}
+    TRAD  -> {"chapter": "26", "language": "ING"}
+    CLEAN -> {"chapter": "15"}
     """
     rol = str(rol).strip().upper()
     capitulo = formato_capitulo(capitulo)
+
     if rol == "CLEAN":
         datos = {
-            "chapter": f"{capitulo}"
+            "chapter": capitulo
         }
+
     elif rol == "TRAD":
         idioma = str(idioma or "").strip().upper()
+
         if idioma not in ("KR", "ING", "INDO", "CHIN"):
             raise ValueError(
-                f"Idioma no válido para CLEAN: {idioma}"
+                f"Idioma no válido para TRAD: {idioma}"
             )
+
         datos = {
             "chapter": capitulo,
             "language": idioma
         }
+
     else:
         raise ValueError(f"Rol no válido: {rol}")
+
     carpeta_destino = Path(carpeta_destino)
     carpeta_destino.mkdir(parents=True, exist_ok=True)
+
     ruta_request = carpeta_destino / "request.json"
     ruta_temporal = carpeta_destino / "request.json.tmp"
+
     with open(ruta_temporal, "w", encoding="utf-8") as archivo:
         json.dump(datos, archivo, ensure_ascii=False, indent=4)
-    os.replace(ruta_temporal, ruta_request)
-    print(f"✅ REQUEST CREADA → {ruta_request}")
-    return str(ruta_request)
 
+    os.replace(ruta_temporal, ruta_request)
+
+    print(f"✅ REQUEST CREADA → {ruta_request}")
+
+    return str(ruta_request)
+# 💖 Editado por Rami
+def ejecutar_descarga_assist(resultado_drive, destino):
+    """
+    Autentica Google Drive y descarga la carpeta RAW
+    en el destino indicado.
+    """
+    creds = authenticate()
+    service = build("drive", "v3", credentials=creds)
+
+    return descargar_carpeta_drive(
+        service,
+        resultado_drive["capitulo_id"],
+        destino
+    )
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -7041,8 +7065,135 @@ async def assist(
         f"   Carpeta: {resultado_drive['capitulo_nombre']}\n"
         f"   Archivos: {resultado_drive['total_archivos']}"
     )
+    # --------------------------------------------------
+    # 8. PREPARAR DESCARGA
+    # --------------------------------------------------
+
+    base_assist = (
+        Path(__file__).resolve().parent
+        / "NANI_ASSIST"
+        / "working"
+    )
+
+    proyecto_carpeta = normalizar_nombre_drive(
+        validacion["proyecto"]
+    )
+
+    capitulo_carpeta = formato_capitulo(
+        validacion["capitulo"]
+    )
+
+    destino = (
+        base_assist
+        / rol
+        / proyecto_carpeta
+        / capitulo_carpeta
+    )
+
+    # Evitar sobrescribir una descarga anterior
+    if destino.exists():
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **La carpeta de trabajo ya existe.**\n"
+                f"```{destino}```\n"
+                "No continuaré para evitar sobrescribir "
+                "archivos de una ejecución anterior."
+            )
+        )
+
+    # --------------------------------------------------
+    # 9. DESCARGAR RAW
+    # --------------------------------------------------
+
     await mensaje_estado.edit(
-        content="✨ **Validación completada, iniciando proceso...**"
+        content=(
+            "☁️ **Descargando imágenes desde Google Drive...**\n"
+            f"Proyecto: `{validacion['proyecto']}`\n"
+            f"Capítulo: `{capitulo_carpeta}`"
+        )
+    )
+
+    try:
+        resultado_descarga = await asyncio.to_thread(
+            ejecutar_descarga_assist,
+            resultado_drive,
+            destino
+        )
+
+    except Exception as e:
+        print(
+            f"❌ ASSIST → Error descargando RAW: {e}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "❌ **Ocurrió un error durante la descarga.**\n"
+                f"```{str(e)[:1200]}```"
+            )
+        )
+
+    if not resultado_descarga["ok"]:
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **La descarga no pudo completarse.**\n"
+                f"Archivos descargados: "
+                f"`{resultado_descarga['total_archivos']}`\n"
+                f"Tamaño: `{resultado_descarga['total_mb']} MB`\n"
+                f"```{str(resultado_descarga['errores'])[:1200]}```"
+            )
+        )
+
+    # --------------------------------------------------
+    # 10. CREAR REQUEST.JSON
+    # --------------------------------------------------
+
+    try:
+        crear_request_assist(
+            rol=rol,
+            capitulo=validacion["capitulo"],
+            idioma=validacion["idioma"],
+            carpeta_destino=destino
+        )
+
+    except Exception as e:
+        print(
+            f"❌ ASSIST → Error creando request.json: {e}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "⚠️ **Las imágenes se descargaron, "
+                "pero no pude crear request.json.**\n"
+                f"```{str(e)[:1200]}```"
+            )
+        )
+
+    # --------------------------------------------------
+    # 11. DESCARGA COMPLETADA
+    # --------------------------------------------------
+
+    print(
+        f"✨ ASSIST → DESCARGA COMPLETADA\n"
+        f"   Proyecto: {validacion['proyecto']}\n"
+        f"   Rol: {rol}\n"
+        f"   Capítulo: {capitulo_carpeta}\n"
+        f"   Archivos: {resultado_descarga['total_archivos']}\n"
+        f"   Tamaño: {resultado_descarga['total_mb']} MB\n"
+        f"   Tiempo: {resultado_descarga['duracion_segundos']} s\n"
+        f"   Destino: {destino}"
+    )
+
+    await mensaje_estado.edit(
+        content=(
+            "✅ **¡Descarga completada correctamente!**\n\n"
+            f"📁 Proyecto: `{validacion['proyecto']}`\n"
+            f"📌 Rol: `{rol}`\n"
+            f"📖 Capítulo: `{capitulo_carpeta}`\n"
+            f"🖼️ Archivos: `{resultado_descarga['total_archivos']}`\n"
+            f"💾 Tamaño: `{resultado_descarga['total_mb']} MB`\n"
+            f"⏱️ Tiempo: `{resultado_descarga['duracion_segundos']} s`\n\n"
+            "🌸 Las imágenes están listas para el siguiente proceso."
+        )
     )
 # Ejecutar bot
 bot.run(TOKEN)
