@@ -7690,12 +7690,12 @@ async def assist(
             )
         )
 
-    # --------------------------------------------------
-    # 11. DESCARGA COMPLETADA
-    # --------------------------------------------------
 
+    # --------------------------------------------------
+    # 11. DESCARGA RAW COMPLETADA
+    # --------------------------------------------------
     print(
-        f"✨ ASSIST → DESCARGA COMPLETADA\n"
+        f"✨ ASSIST → DESCARGA RAW COMPLETADA\n"
         f"   Proyecto: {validacion['proyecto']}\n"
         f"   Rol: {rol}\n"
         f"   Capítulo: {capitulo_carpeta}\n"
@@ -7705,62 +7705,135 @@ async def assist(
         f"   Destino: {destino}"
     )
 
+    # --------------------------------------------------
+    # 12. PROCESAMIENTO AUTOMÁTICO CLEAN
+    # --------------------------------------------------
+    if rol == "CLEAN":
+
+        # --------------------------------------------------
+        # 12.1 EJECUTAR KAGGLE
+        # --------------------------------------------------
+        await mensaje_estado.edit(
+            content=(
+                "🧹 **¡Descarga RAW completada!**\n\n"
+                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                f"📖 Capítulo: `{capitulo_carpeta}`\n"
+                f"🖼️ Imágenes RAW: "
+                f"`{resultado_descarga['total_archivos']}`\n\n"
+                "🚀 **Iniciando procesamiento NANI_CLEAN...**\n"
+                "☁️ Enviando imágenes a Kaggle."
+            )
+        )
+
+        try:
+            carpeta_resultados = await asyncio.to_thread(
+                ejecutar_kaggle_clean_assist,
+                destino
+            )
+
+        except Exception as e:
+            print(
+                "❌ ASSIST → ERROR EN PROCESAMIENTO KAGGLE:\n"
+                f"{traceback.format_exc()}"
+            )
+
+            return await mensaje_estado.edit(
+                content=(
+                    "⚠️ **Las imágenes RAW se descargaron, "
+                    "pero NANI_CLEAN no pudo completarse.**\n\n"
+                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
+                    f"💾 RAW conservado en el servidor.\n\n"
+                    "❌ **Error de Kaggle:**\n"
+                    f"```{str(e)[:1200]}```"
+                )
+            )
+
+        # --------------------------------------------------
+        # 12.2 SUBIR RESULTADOS A GOOGLE DRIVE
+        # --------------------------------------------------
+        await mensaje_estado.edit(
+            content=(
+                "✅ **¡NANI_CLEAN completado!**\n\n"
+                "☁️ **Subiendo resultados a Google Drive...**\n"
+                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                f"📖 Capítulo: `{capitulo_carpeta}`"
+            )
+        )
+
+        try:
+            resultado_subida = await asyncio.to_thread(
+                subir_resultados_clean_drive,
+                destino,
+                carpeta_resultados
+            )
+
+        except Exception as e:
+            print(
+                "❌ ASSIST → ERROR EN SUBIDA CLEAN:\n"
+                f"{traceback.format_exc()}"
+            )
+
+            return await mensaje_estado.edit(
+                content=(
+                    "⚠️ **NANI_CLEAN terminó correctamente, "
+                    "pero no pude subir los resultados a Drive.**\n\n"
+                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
+                    "💾 Los resultados se conservaron "
+                    "localmente en el servidor.\n\n"
+                    "❌ **Error de subida:**\n"
+                    f"```{str(e)[:1200]}```"
+                )
+            )
+
+        # --------------------------------------------------
+        # 12.3 CLEAN COMPLETADO
+        # --------------------------------------------------
+        print(
+            f"🌸 ASSIST → CLEAN COMPLETADO\n"
+            f"   Proyecto: {validacion['proyecto']}\n"
+            f"   Capítulo: {capitulo_carpeta}\n"
+            f"   Carpeta Drive: {resultado_subida['folder_name']}\n"
+            f"   Archivos: {resultado_subida['total_archivos']}\n"
+            f"   ID: {resultado_subida['folder_id']}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "🎉 **¡PROCESO CLEAN COMPLETADO!**\n\n"
+                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                f"📌 Rol: `CLEAN`\n"
+                f"📖 Capítulo: `{capitulo_carpeta}`\n"
+                f"🖼️ Imágenes RAW: "
+                f"`{resultado_descarga['total_archivos']}`\n"
+                f"✨ Imágenes procesadas: "
+                f"`{resultado_subida['total_archivos']}`\n"
+                f"☁️ Carpeta Drive: "
+                f"`{resultado_subida['folder_name']}`\n\n"
+                "✅ Kaggle procesó las imágenes.\n"
+                "✅ Google Drive recibió los resultados.\n\n"
+                "🌸 **¡Todo listo!**"
+            )
+        )
+
+    # --------------------------------------------------
+    # 13. DESCARGA COMPLETADA — TRAD / OTROS ROLES
+    # --------------------------------------------------
     await mensaje_estado.edit(
         content=(
             "✅ **¡Descarga completada correctamente!**\n\n"
             f"📁 Proyecto: `{validacion['proyecto']}`\n"
             f"📌 Rol: `{rol}`\n"
             f"📖 Capítulo: `{capitulo_carpeta}`\n"
-            f"🖼️ Archivos: `{resultado_descarga['total_archivos']}`\n"
+            f"🖼️ Archivos: "
+            f"`{resultado_descarga['total_archivos']}`\n"
             f"💾 Tamaño: `{resultado_descarga['total_mb']} MB`\n"
-            f"⏱️ Tiempo: `{resultado_descarga['duracion_segundos']} s`\n\n"
+            f"⏱️ Tiempo: "
+            f"`{resultado_descarga['duracion_segundos']} s`\n\n"
             "🌸 Las imágenes están listas para el siguiente proceso."
         )
     )
-
-
-# 💖 Editado por Rami
-@bot.command(name="subirclean13")
-@commands.is_owner()
-async def subirclean13(ctx):
-
-    await ctx.send("🌸 Iniciando subida del capítulo 13 a Drive...")
-
-    carpeta_capitulo = (
-        "/root/SAKU_BOT/NANI_ASSIST/working/CLEAN/"
-        "#143-nos-vemos-en-el-campo-de-chiles/13"
-    )
-
-    carpeta_resultados = (
-        "/root/SAKU_BOT/NANI_ASSIST/CLEAN/output/13"
-    )
-
-    try:
-        resultado = await asyncio.to_thread(
-            subir_resultados_clean_drive,
-            carpeta_capitulo,
-            carpeta_resultados
-        )
-
-        await ctx.send(
-            "✅ **¡Subida CLEAN completada!**\n\n"
-            f"📁 Carpeta: `{resultado['folder_name']}`\n"
-            f"🖼️ Archivos: `{resultado['total_archivos']}`\n"
-            f"🆔 ID: `{resultado['folder_id']}`"
-        )
-
-    except Exception as e:
-
-        print(
-            "❌ ASSIST → ERROR EN SUBIDA CLEAN:\n"
-            f"{traceback.format_exc()}"
-        )
-
-        await ctx.send(
-            "❌ **Error durante la subida a Drive.**\n"
-            f"```{str(e)[:1500]}```"
-        )
-
 
 # Ejecutar bot
 bot.run(TOKEN)
