@@ -3864,6 +3864,125 @@ def subir_resultados_clean_drive(carpeta_capitulo, carpeta_resultados):
         "archivos": nombres
     }
 
+# 💖 Editado por Rami
+def ejecutar_kaggle_clean_assist(carpeta_capitulo):
+    """
+    Ejecuta kaggle_clean.py desde SAKU_BOT para un capítulo CLEAN.
+    Espera a que Kaggle termine y devuelve la carpeta de resultados.
+    """
+    import subprocess
+
+    carpeta_capitulo = Path(carpeta_capitulo).resolve()
+
+    base_dir = Path(__file__).resolve().parent
+    script_kaggle = (
+        base_dir / "NANI_ASSIST" / "CLEAN" / "kaggle_clean.py"
+    )
+    python_venv = base_dir / "venv" / "bin" / "python"
+
+    # ------------------------------------------------------
+    # 1. VALIDAR RUTAS
+    # ------------------------------------------------------
+    if not script_kaggle.is_file():
+        raise FileNotFoundError(
+            f"No encontré kaggle_clean.py: {script_kaggle}"
+        )
+
+    if not python_venv.is_file():
+        raise FileNotFoundError(
+            f"No encontré Python del entorno virtual: {python_venv}"
+        )
+
+    if not carpeta_capitulo.is_dir():
+        raise NotADirectoryError(
+            f"No existe la carpeta del capítulo: {carpeta_capitulo}"
+        )
+
+    print("\n" + "=" * 60)
+    print("🌸 ASSIST → INICIANDO NANI_CLEAN")
+    print(f"📁 Capítulo: {carpeta_capitulo}")
+    print("=" * 60)
+
+    # ------------------------------------------------------
+    # 2. EJECUTAR KAGGLE Y ESPERAR SU FINALIZACIÓN
+    # ------------------------------------------------------
+    proceso = subprocess.run(
+        [
+            str(python_venv),
+            str(script_kaggle),
+            str(carpeta_capitulo),
+            "--no-pause"
+        ],
+        cwd=str(script_kaggle.parent),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False
+    )
+
+    # Mostrar los registros en la consola de PM2
+    if proceso.stdout:
+        print(proceso.stdout)
+
+    if proceso.stderr:
+        print(proceso.stderr)
+
+    # ------------------------------------------------------
+    # 3. COMPROBAR RESULTADO DEL PROCESO
+    # ------------------------------------------------------
+    if proceso.returncode != 0:
+        detalle = (
+            proceso.stderr
+            or proceso.stdout
+            or "Sin detalles adicionales."
+        )[-6000:]
+
+        raise RuntimeError(
+            "Kaggle CLEAN terminó con código "
+            f"{proceso.returncode}:\n{detalle}"
+        )
+
+    # ------------------------------------------------------
+    # 4. LOCALIZAR RESULTADOS
+    # ------------------------------------------------------
+    capitulo = carpeta_capitulo.name
+
+    carpeta_resultados = (
+        script_kaggle.parent / "output" / capitulo
+    )
+
+    if not carpeta_resultados.is_dir():
+        raise FileNotFoundError(
+            "Kaggle terminó correctamente, pero no encontré "
+            f"la carpeta de resultados: {carpeta_resultados}"
+        )
+
+    resultados = sorted(
+        archivo
+        for archivo in carpeta_resultados.iterdir()
+        if archivo.is_file()
+        and re.fullmatch(
+            r"\d+_PR\.jpg",
+            archivo.name,
+            re.IGNORECASE
+        )
+    )
+
+    if not resultados:
+        raise RuntimeError(
+            "Kaggle terminó, pero no encontré imágenes "
+            f"_PR.jpg en {carpeta_resultados}"
+        )
+
+    print("\n" + "=" * 60)
+    print("✅ ASSIST → NANI_CLEAN COMPLETADO")
+    print(f"📁 Resultados: {carpeta_resultados}")
+    print(f"🖼️ Imágenes: {len(resultados)}")
+    print("=" * 60)
+
+    return str(carpeta_resultados)
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
