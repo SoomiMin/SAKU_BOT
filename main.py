@@ -24,7 +24,7 @@ from telethon.tl.types import MessageService, MessageActionTopicCreate
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 # 💖 Editado por Rami
 load_dotenv()
