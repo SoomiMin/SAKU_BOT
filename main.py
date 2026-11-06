@@ -3578,6 +3578,292 @@ def crear_drive_upload(rol, capitulo, resultado_drive, carpeta_destino):
 
     return str(ruta_drive_upload)
 
+
+# 💖 Editado por Rami
+def subir_resultados_clean_drive(carpeta_capitulo, carpeta_resultados):
+    """
+    Sube los resultados CLEAN a Google Drive.
+
+    Estructura:
+        CLEAN/
+        └── 13_PR/
+            ├── 01_PR.jpg
+            └── 02_PR.jpg
+
+    No sobrescribe ni mezcla carpetas existentes.
+    Verifica los nombres y tamaños después de subir.
+    """
+
+    import re
+
+    carpeta_capitulo = Path(carpeta_capitulo)
+    carpeta_resultados = Path(carpeta_resultados)
+
+    # --------------------------------------------------
+    # 1. LEER METADATOS DEL DRIVE
+    # --------------------------------------------------
+
+    ruta_metadata = carpeta_capitulo / "drive_upload.json"
+
+    if not ruta_metadata.is_file():
+        raise FileNotFoundError(
+            f"No encontré drive_upload.json: {ruta_metadata}"
+        )
+
+    with open(ruta_metadata, "r", encoding="utf-8") as archivo:
+        datos = json.load(archivo)
+
+    capitulo = str(datos.get("chapter", "")).strip()
+    clean_id = str(datos.get("clean_id", "")).strip()
+
+    if not capitulo or not clean_id:
+        raise ValueError(
+            "drive_upload.json no contiene chapter o clean_id."
+        )
+
+    if carpeta_capitulo.name != capitulo:
+        raise ValueError(
+            f"El capítulo del metadata ({capitulo}) "
+            f"no coincide con la carpeta ({carpeta_capitulo.name})."
+        )
+
+    nombre_carpeta_drive = f"{capitulo}_PR"
+
+    print("\n==============================================")
+    print("NANI ASSIST — SUBIDA CLEAN A GOOGLE DRIVE")
+    print("==============================================")
+    print(f"Capítulo: {capitulo}")
+    print(f"Destino: {nombre_carpeta_drive}")
+    print(f"ID CLEAN: {clean_id}")
+
+    # --------------------------------------------------
+    # 2. VALIDAR RESULTADOS LOCALES
+    # --------------------------------------------------
+
+    if not carpeta_resultados.is_dir():
+        raise FileNotFoundError(
+            f"No existe la carpeta de resultados: {carpeta_resultados}"
+        )
+
+    archivos = sorted(
+        [
+            archivo
+            for archivo in carpeta_resultados.iterdir()
+            if archivo.is_file()
+            and re.fullmatch(r"\d+_PR\.jpg", archivo.name, re.IGNORECASE)
+        ],
+        key=lambda archivo: int(archivo.stem.split("_")[0])
+    )
+
+    if not archivos:
+        raise ValueError(
+            "No se encontraron imágenes con formato *_PR.jpg."
+        )
+
+    nombres = [archivo.name for archivo in archivos]
+
+    if len(nombres) != len(set(nombres)):
+        raise ValueError("Hay nombres de archivos duplicados.")
+
+    for archivo in archivos:
+        if archivo.stat().st_size <= 0:
+            raise ValueError(
+                f"El archivo está vacío: {archivo.name}"
+            )
+
+    print(f"\n[i] Resultados encontrados: {len(archivos)}")
+
+    for archivo in archivos:
+        print(
+            f"    - {archivo.name} "
+            f"({archivo.stat().st_size:,} bytes)"
+        )
+
+    # --------------------------------------------------
+    # 3. AUTENTICAR GOOGLE DRIVE
+    # --------------------------------------------------
+
+    creds = authenticate_assist()
+
+    service = build(
+        "drive",
+        "v3",
+        credentials=creds
+    )
+
+    # --------------------------------------------------
+    # 4. COMPROBAR CARPETA DESTINO
+    # --------------------------------------------------
+
+    nombre_busqueda = nombre_carpeta_drive.replace(
+        "\\", "\\\\"
+    ).replace("'", "\\'")
+
+    consulta = (
+        f"'{clean_id}' in parents "
+        f"and name='{nombre_busqueda}' "
+        f"and mimeType='application/vnd.google-apps.folder' "
+        f"and trashed=false"
+    )
+
+    existentes = service.files().list(
+        q=consulta,
+        spaces="drive",
+        fields="files(id,name)",
+        pageSize=100
+    ).execute().get("files", [])
+
+    if existentes:
+        raise FileExistsError(
+            f"La carpeta {nombre_carpeta_drive} ya existe en Drive. "
+            "No se modificará ni sobrescribirá."
+        )
+
+    print("\n[✓] El destino está disponible.")
+
+    # --------------------------------------------------
+    # 5. CREAR CARPETA DESTINO
+    # --------------------------------------------------
+
+    carpeta_creada = service.files().create(
+        body={
+            "name": nombre_carpeta_drive,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [clean_id]
+        },
+        fields="id,name"
+    ).execute()
+
+    carpeta_id = carpeta_creada["id"]
+
+    print(
+        f"[✓] Carpeta creada: {carpeta_creada['name']}"
+    )
+    print(f"[i] ID: {carpeta_id}")
+
+    # --------------------------------------------------
+    # 6. SUBIR IMÁGENES
+    # --------------------------------------------------
+
+    subidos = []
+
+    for indice, archivo in enumerate(archivos, start=1):
+
+        print(
+            f"\n[{indice}/{len(archivos)}] "
+            f"Subiendo {archivo.name}..."
+        )
+
+        media = MediaFileUpload(
+            str(archivo),
+            mimetype="image/jpeg",
+            resumable=True
+        )
+
+        resultado = service.files().create(
+            body={
+                "name": archivo.name,
+                "parents": [carpeta_id]
+            },
+            media_body=media,
+            fields="id,name,size"
+        ).execute()
+
+        subidos.append({
+            "id": resultado["id"],
+            "name": resultado["name"],
+            "size": int(resultado["size"])
+        })
+
+        print(f"[✓] Subido: {resultado['name']}")
+
+    # --------------------------------------------------
+    # 7. VERIFICAR CONTENIDO EN DRIVE
+    # --------------------------------------------------
+
+    elementos_drive = []
+    pagina = None
+
+    while True:
+
+        respuesta = service.files().list(
+            q=f"'{carpeta_id}' in parents and trashed=false",
+            spaces="drive",
+            fields="nextPageToken,files(id,name,size,mimeType)",
+            pageSize=100,
+            pageToken=pagina
+        ).execute()
+
+        elementos_drive.extend(respuesta.get("files", []))
+
+        pagina = respuesta.get("nextPageToken")
+
+        if not pagina:
+            break
+
+    archivos_drive = {
+        elemento["name"]: elemento
+        for elemento in elementos_drive
+        if elemento.get("mimeType") != "application/vnd.google-apps.folder"
+    }
+
+    errores = []
+
+    if set(archivos_drive) != set(nombres):
+        errores.append(
+            "Los nombres de archivos en Drive no coinciden."
+        )
+
+    for archivo in archivos:
+
+        remoto = archivos_drive.get(archivo.name)
+
+        if not remoto:
+            errores.append(
+                f"No se encontró en Drive: {archivo.name}"
+            )
+            continue
+
+        tamano_local = archivo.stat().st_size
+        tamano_remoto = int(remoto.get("size", -1))
+
+        if tamano_local != tamano_remoto:
+            errores.append(
+                f"Tamaño incorrecto en {archivo.name}: "
+                f"local={tamano_local}, Drive={tamano_remoto}"
+            )
+
+    if errores:
+        raise RuntimeError(
+            "La subida terminó, pero la verificación falló:\n- "
+            + "\n- ".join(errores)
+            + f"\nCarpeta creada: {nombre_carpeta_drive} "
+            f"(ID: {carpeta_id}). No se eliminó nada."
+        )
+
+    # --------------------------------------------------
+    # 8. RESULTADO FINAL
+    # --------------------------------------------------
+
+    print("\n==============================================")
+    print("¡SUBIDA CLEAN COMPLETADA!")
+    print("==============================================")
+    print(f"Capítulo: {capitulo}")
+    print(f"Carpeta Drive: {nombre_carpeta_drive}")
+    print(f"Archivos verificados: {len(archivos)}")
+    print("Nombres: CORRECTOS")
+    print("Tamaños: CORRECTOS")
+    print(f"ID carpeta: {carpeta_id}")
+
+    return {
+        "ok": True,
+        "chapter": capitulo,
+        "folder_id": carpeta_id,
+        "folder_name": nombre_carpeta_drive,
+        "total_archivos": len(archivos),
+        "archivos": nombres
+    }
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -7312,5 +7598,50 @@ async def assist(
             "🌸 Las imágenes están listas para el siguiente proceso."
         )
     )
+
+
+# 💖 Editado por Rami
+@bot.command(name="subirclean13")
+@commands.is_owner()
+async def subirclean13(ctx):
+
+    await ctx.send("🌸 Iniciando subida del capítulo 13 a Drive...")
+
+    carpeta_capitulo = (
+        "/root/SAKU_BOT/NANI_ASSIST/working/CLEAN/"
+        "#143-nos-vemos-en-el-campo-de-chiles/13"
+    )
+
+    carpeta_resultados = (
+        "/root/SAKU_BOT/NANI_ASSIST/CLEAN/output/13"
+    )
+
+    try:
+        resultado = await asyncio.to_thread(
+            subir_resultados_clean_drive,
+            carpeta_capitulo,
+            carpeta_resultados
+        )
+
+        await ctx.send(
+            "✅ **¡Subida CLEAN completada!**\n\n"
+            f"📁 Carpeta: `{resultado['folder_name']}`\n"
+            f"🖼️ Archivos: `{resultado['total_archivos']}`\n"
+            f"🆔 ID: `{resultado['folder_id']}`"
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ ASSIST → ERROR EN SUBIDA CLEAN:\n"
+            f"{traceback.format_exc()}"
+        )
+
+        await ctx.send(
+            "❌ **Error durante la subida a Drive.**\n"
+            f"```{str(e)[:1500]}```"
+        )
+
+
 # Ejecutar bot
 bot.run(TOKEN)
