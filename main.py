@@ -3470,6 +3470,63 @@ def ejecutar_descarga_assist(resultado_drive, destino):
         resultado_drive["capitulo_id"],
         destino
     )
+# 💖 Editado por Rami
+# ==========================================================
+# AUTENTICACIÓN GOOGLE — NANI ASSIST
+# ==========================================================
+
+GOOGLE_ASSIST_TOKEN = Path("/root/NANI_POSTING/token.json")
+
+GOOGLE_ASSIST_SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets.readonly"
+]
+
+
+def authenticate_assist():
+    """
+    Autentica NANI ASSIST utilizando el OAuth personal
+    de NANI_POSTING.
+
+    - Lee token.json.
+    - Renueva el token si ha expirado.
+    - No modifica el archivo token.json.
+    - Devuelve las credenciales OAuth.
+    """
+
+    if not GOOGLE_ASSIST_TOKEN.exists():
+        raise FileNotFoundError(
+            f"No encontré el token OAuth: {GOOGLE_ASSIST_TOKEN}"
+        )
+
+    creds = Credentials.from_authorized_user_file(
+        str(GOOGLE_ASSIST_TOKEN),
+        GOOGLE_ASSIST_SCOPES
+    )
+
+    if creds.expired:
+        if not creds.refresh_token:
+            raise Exception(
+                "El token OAuth expiró y no tiene refresh_token."
+            )
+
+        print("🔄 ASSIST → Renovando token OAuth personal...")
+        creds.refresh(Request())
+
+    if not creds.valid:
+        raise Exception(
+            "Las credenciales OAuth personales no son válidas."
+        )
+
+    if not creds.has_scopes(GOOGLE_ASSIST_SCOPES):
+        raise Exception(
+            "El token OAuth no contiene todos los permisos necesarios."
+        )
+
+    print("✅ ASSIST → OAuth personal autenticado correctamente.")
+
+    return creds
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
