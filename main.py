@@ -7904,24 +7904,6 @@ async def assist(
                             f"```{str(e)[:1200]}```"
                         )
                     )
-#                # 12.3 CLEAN COMPLETADO
-#                print(
-#                    f"🌸 ASSIST → CLEAN COMPLETADO\n"
-#                    f"   Proyecto: {validacion['proyecto']}\n"
-#                    f"   Capítulo: {capitulo_carpeta}\n"
-#                    f"   Carpeta Drive: {resultado_subida['folder_name']}\n"
-#                    f"   Archivos: {resultado_subida['total_archivos']}\n"
-#                    f"   ID: {resultado_subida['folder_id']}"
-#                )
-#                return await mensaje_estado.edit(
-#                    content=(
-#                        f"## *¡PROCESO COMPLETADO!*\n"
-#                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
-#                        f"⏱️ *Realizado en {resultado_descarga['duracion_segundos']} minutos*\n" 
-#                        f"<@{ctx.author.id}>, ***Tiras listas para revisión / corrección manual.***\n"
-#                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
-#                    )
-#                )
                 # 12.3 CLEAN COMPLETADO
                 # 💖 Editado por Rami
                 duracion_minutos = (
@@ -7950,8 +7932,8 @@ async def assist(
                 await ctx.send(
                     f"## *¡PROCESO CLEAN COMPLETADO!*\n"
                     f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
-                    f"[CAPÍTULO PROCESADO - "
-                    f"{resultado_subida['folder_name']}]"
+                    f"**[CAPÍTULO PROCESADO - "
+                    f"{resultado_subida['folder_name']}]**"
                     f"({enlace_drive})\n"
                     f"Descargue la carpeta para corregir manualmente.\n"
                     f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
