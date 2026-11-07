@@ -1,4 +1,4 @@
-import os, re, discord, asyncio, requests, time, json, unicodedata
+import os, re, discord, asyncio, requests, time, json, unicodedata, copy
 from discord.ext import commands
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -25,6 +25,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from contextlib import asynccontextmanager
 
 # 💖 Editado por Rami
 load_dotenv()
@@ -273,6 +274,7 @@ ASSIGN_COOLDOWN = 30  #lo bajé a 30s para que no se vea tan ofensivo
 last_assign_time = 0
 DRIVE_COOLDOWN = 45  # segundos
 last_drive_time = 0
+ASSIST_PROCESS_LOCK = asyncio.Lock()
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -3982,6 +3984,154 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
     print("=" * 60)
 
     return str(carpeta_resultados)
+
+@asynccontextmanager
+async def bloqueo_temporal_assist(canal):
+    """
+    Bloquea temporalmente la escritura en el canal de NANI ASSIST.
+
+    - Conserva los permisos originales.
+    - Bloquea mensajes y mensajes en hilos.
+    - Impide crear hilos durante el proceso.
+    - Mantiene habilitado al bot.
+    - Restaura los permisos al terminar, incluso si ocurre un error.
+    - Si el canal estaba sincronizado con su categoría,
+      restaura también esa sincronización.
+    """
+
+    permisos_bloqueados = (
+        "send_messages",
+        "send_messages_in_threads",
+        "create_public_threads",
+        "create_private_threads"
+    )
+
+    # 1. GUARDAR ESTADO ORIGINAL
+    estaba_sincronizado = canal.permissions_synced
+    permisos_originales = dict(canal.overwrites)
+
+    # Trabajamos sobre una copia para no alterar el original.
+    nuevos_permisos = dict(permisos_originales)
+
+    # 2. BLOQUEAR @EVERYONE
+    everyone = canal.guild.default_role
+
+    overwrite_everyone = copy.copy(
+        nuevos_permisos.get(
+            everyone,
+            discord.PermissionOverwrite()
+        )
+    )
+
+    for permiso in permisos_bloqueados:
+        setattr(overwrite_everyone, permiso, False)
+
+    nuevos_permisos[everyone] = overwrite_everyone
+
+    # 3. EVITAR QUE OTROS PERMISOS EXPLÍCITOS
+    #    PERMITAN ESCRIBIR DURANTE EL BLOQUEO.
+    for objetivo, overwrite in list(nuevos_permisos.items()):
+
+        if objetivo == everyone:
+            continue
+
+        # Los administradores no pueden ser bloqueados
+        # mediante sobrescrituras normales de Discord.
+        if isinstance(objetivo, discord.Role):
+            if objetivo.permissions.administrator:
+                continue
+
+        elif isinstance(objetivo, discord.Member):
+
+            # Mantener al bot fuera de los bloqueos.
+            if bot.user and objetivo.id == bot.user.id:
+                continue
+
+            if objetivo.guild_permissions.administrator:
+                continue
+
+        else:
+            continue
+
+        nuevo_overwrite = copy.copy(overwrite)
+
+        for permiso in permisos_bloqueados:
+            if getattr(nuevo_overwrite, permiso) is True:
+                setattr(nuevo_overwrite, permiso, False)
+
+        nuevos_permisos[objetivo] = nuevo_overwrite
+
+    # 4. ASEGURAR QUE EL BOT PUEDA SEGUIR ESCRIBIENDO
+    bot_member = canal.guild.get_member(bot.user.id)
+
+    if bot_member:
+        overwrite_bot = copy.copy(
+            nuevos_permisos.get(
+                bot_member,
+                discord.PermissionOverwrite()
+            )
+        )
+
+        overwrite_bot.send_messages = True
+        overwrite_bot.send_messages_in_threads = True
+
+        nuevos_permisos[bot_member] = overwrite_bot
+
+    # 5. APLICAR BLOQUEO
+    print(
+        f"🔒 ASSIST → Bloqueando temporalmente "
+        f"el canal #{canal.name}"
+    )
+
+    await canal.edit(
+        overwrites=nuevos_permisos,
+        reason="NANI ASSIST: proceso automático en ejecución."
+    )
+
+    try:
+        yield
+
+    finally:
+
+        # 6. RESTAURAR PERMISOS ORIGINALES
+        print(
+            f"🔓 ASSIST → Restaurando permisos "
+            f"del canal #{canal.name}"
+        )
+
+        try:
+
+            if estaba_sincronizado:
+
+                await canal.edit(
+                    sync_permissions=True,
+                    reason="NANI ASSIST: restauración de permisos."
+                )
+
+            else:
+
+                await canal.edit(
+                    overwrites=permisos_originales,
+                    reason="NANI ASSIST: restauración de permisos."
+                )
+
+            print(
+                f"✅ ASSIST → Permisos restaurados "
+                f"correctamente en #{canal.name}"
+            )
+
+        except Exception as e:
+
+            print(
+                "🚨 ASSIST → ERROR CRÍTICO "
+                "RESTAURANDO PERMISOS:\n"
+                f"{traceback.format_exc()}"
+            )
+
+            raise RuntimeError(
+                f"No se pudieron restaurar los permisos "
+                f"de #{canal.name}: {e}"
+            ) from e
 
 # Eventos de Discord
 @bot.event
