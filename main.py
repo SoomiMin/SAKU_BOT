@@ -7563,7 +7563,7 @@ async def assist(
         return await mensaje_estado.edit(
             content=(
                 "⛔ **No se pudo validar la documentación.**\n"
-                f"```{resultado_drive['motivo']}```"
+#                f"```{resultado_drive['motivo']}```"
             )
         )
     # 7. VALIDACIONES COMPLETADAS
@@ -7623,8 +7623,6 @@ async def assist(
     await mensaje_estado.edit(
         content=(
             "☁️ *Descargando imágenes desde Google Drive...*\n"
-#            f"Proyecto: `{validacion['proyecto']}`\n"
-#            f"Capítulo: `{capitulo_carpeta}`"
         )
     )
 
@@ -7716,12 +7714,7 @@ async def assist(
         await mensaje_estado.edit(
             content=(
                 "🧹 *¡Descarga RAW completada!*\n"
-#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-#                f"📖 Capítulo: `{capitulo_carpeta}`\n"
-#                f"🖼️ Imágenes RAW: "
-#                f"`{resultado_descarga['total_archivos']}`\n\n"
                 "🚀 ***Iniciando procesamiento de limpieza...***\n"
-#                "☁️ Enviando imágenes a Kaggle."
             )
         )
 
@@ -7740,10 +7733,7 @@ async def assist(
             return await mensaje_estado.edit(
                 content=(
                     "⚠️ *Las imágenes RAW se descargaron, "
-                    "pero NANI_CLEAN no pudo completarse.*\n"
-#                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
-#                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
-#                    f"💾 RAW conservado en el servidor.\n\n"
+                    "pero el proceso de limpieza no pudo completarse.*\n"
                     "❌ **Error de procesamiento:**\n"
                     f"```{str(e)[:1200]}```"
                 )
@@ -7756,8 +7746,6 @@ async def assist(
             content=(
                 "✅ ***¡Proceso completado!***\n"
                 "☁️ *Subiendo resultados a Google Drive...*\n"
-#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-#                f"📖 Capítulo: `{capitulo_carpeta}`"
             )
         )
 
@@ -7778,10 +7766,6 @@ async def assist(
                 content=(
                     "⚠️ **NANI_CLEAN terminó correctamente, "
                     "pero no se pudieron subir los resultados a DRIVE.**\n"
-#                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
-#                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
-#                    "💾 Los resultados se conservaron "
-#                    "localmente en el servidor.\n\n"
                     "❌ **Error de subida:**\n"
                     f"```{str(e)[:1200]}```"
                 )
@@ -7802,19 +7786,10 @@ async def assist(
         return await mensaje_estado.edit(
             content=(
                 f"## *¡PROCESO COMPLETADO!*\n"
-#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-#                f"📌 Rol: `CLEAN`\n"
-#                f"📖 Capítulo: `{capitulo_carpeta}`\n"
-#                f"🖼️ Imágenes RAW: "
-#                f"`{resultado_descarga['total_archivos']}`\n"
-#                f"✨ Imágenes procesadas: "
-#                f"`{resultado_subida['total_archivos']}`\n"
-#                f"☁️ Carpeta Drive: "
-#                f"`{resultado_subida['folder_name']}`\n\n"
-#                "✅ Kaggle procesó las imágenes.\n"
-#                "✅ Google Drive recibió los resultados.\n\n"
-                f"⏱️ *Realizado en {resultado_descarga['duracion_segundos']} minutos\n*" #aqui hay que poner el tiempo que se estuvo el proceso de kaggle
-                f"🌸 ***Proceda a realizar revisión / corrección manual.***"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
+                f"⏱️ *Realizado en {resultado_descarga['duracion_segundos']} minutos*\n" #aqui creo que es más fácil solo poner el tiempo que pasó entre el mensaje de solicitud y la ultima edición, para que no tengamos que hacer contadores de cada cada cosa
+                f"<@{ctx.author.id}>, ***Tiras listas para revisión / corrección manual.***\n"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
             )
         )
 
