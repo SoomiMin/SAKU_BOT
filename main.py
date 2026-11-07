@@ -7713,7 +7713,7 @@ async def assist(
         return await mensaje_estado.edit(
             content=(
                 "⛔ **No se pudo validar la documentación.**\n"
-#                f"```{resultado_drive['motivo']}```"
+                f"```{resultado_drive['motivo']}```"
             )
         )
     # 7. VALIDACIONES COMPLETADAS
