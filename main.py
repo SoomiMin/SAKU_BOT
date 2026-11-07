@@ -7765,201 +7765,214 @@ async def assist(
                 "de archivos de una ejecución anterior."
             )
         )
-
-    # --------------------------------------------------
-    # 9. DESCARGAR RAW
-    # --------------------------------------------------
-
-    await mensaje_estado.edit(
-        content=(
-            "☁️ *Descargando imágenes desde Google Drive...*\n"
+    # 8.5. CONTROLAR EJECUCIONES SIMULTÁNEAS
+    if ASSIST_PROCESS_LOCK.locked():
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **Ya hay una solicitud en proceso.**\n"
+                "Espera a que termine antes de iniciar otra."
+            )
         )
-    )
 
+    await ASSIST_PROCESS_LOCK.acquire()
     try:
-        resultado_descarga = await asyncio.to_thread(
-            ejecutar_descarga_assist,
-            resultado_drive,
-            destino
-        )
+        async with bloqueo_temporal_assist(ctx.channel):
 
-    except Exception as e:
-        print(
-            f"❌ ASSIST → **Error descargando RAW:** {e}"
-        )
-
-        return await mensaje_estado.edit(
-            content=(
-                "❌ **Ocurrió un error durante la descarga.**\n"
-                f"```{str(e)[:1200]}```"
-            )
-        )
-
-    if not resultado_descarga["ok"]:
-        return await mensaje_estado.edit(
-            content=(
-                "⛔ **La descarga no pudo completarse.**\n"
-                f"Archivos descargados: "
-                f"`{resultado_descarga['total_archivos']}`\n"
-                f"Tamaño: `{resultado_descarga['total_mb']} MB`\n"
-                f"```{str(resultado_descarga['errores'])[:1200]}```"
-            )
-        )
-
-    # --------------------------------------------------
-    # 10. CREAR REQUEST.JSON
-    # --------------------------------------------------
-
-    try:
-        crear_request_assist(
-            rol=rol,
-            capitulo=validacion["capitulo"],
-            idioma=validacion["idioma"],
-            carpeta_destino=destino
-        )
-        if rol == "CLEAN":
-            crear_drive_upload(
-                rol=rol,
-                capitulo=validacion["capitulo"],
-                resultado_drive=resultado_drive,
-                carpeta_destino=destino
-            )
-
-    except Exception as e:
-        print(
-            f"❌ ASSIST → **Error creando request.json:** {e}"
-        )
-
-        return await mensaje_estado.edit(
-            content=(
-                "⚠️ **Las imágenes se descargaron, "
-                "pero no fue posible manejar la solicitud.**\n"
-                f"```{str(e)[:1200]}```"
-            )
-        )
-
-
-    # --------------------------------------------------
-    # 11. DESCARGA RAW COMPLETADA
-    # --------------------------------------------------
-    print(
-        f"✨ ASSIST → DESCARGA RAW COMPLETADA\n"
-        f"   Proyecto: {validacion['proyecto']}\n"
-        f"   Rol: {rol}\n"
-        f"   Capítulo: {capitulo_carpeta}\n"
-        f"   Archivos: {resultado_descarga['total_archivos']}\n"
-        f"   Tamaño: {resultado_descarga['total_mb']} MB\n"
-        f"   Tiempo: {resultado_descarga['duracion_segundos']} s\n"
-        f"   Destino: {destino}"
-    )
-
-    # --------------------------------------------------
-    # 12. PROCESAMIENTO AUTOMÁTICO CLEAN
-    # --------------------------------------------------
-    if rol == "CLEAN":
-
-        # --------------------------------------------------
-        # 12.1 EJECUTAR KAGGLE
-        # --------------------------------------------------
-        await mensaje_estado.edit(
-            content=(
-                "🧹 *¡Descarga RAW completada!*\n"
-                "🚀 ***Iniciando procesamiento de limpieza...***\n"
-            )
-        )
-
-        try:
-            carpeta_resultados = await asyncio.to_thread(
-                ejecutar_kaggle_clean_assist,
-                destino
-            )
-
-        except Exception as e:
-            print(
-                "❌ ASSIST → ERROR EN PROCESAMIENTO KAGGLE:\n"
-                f"{traceback.format_exc()}"
-            )
-
-            return await mensaje_estado.edit(
+            # 💖 Editado por Rami
+            # Inicio del tiempo total del proceso
+            inicio_proceso = time.perf_counter()
+        
+            # 9. DESCARGAR RAW
+            await mensaje_estado.edit(
                 content=(
-                    "⚠️ *Las imágenes RAW se descargaron, "
-                    "pero el proceso de limpieza no pudo completarse.*\n"
-                    "❌ **Error de procesamiento:**\n"
-                    f"```{str(e)[:1200]}```"
+                    "☁️ *Descargando imágenes desde Google Drive...*\n"
                 )
             )
-
-        # --------------------------------------------------
-        # 12.2 SUBIR RESULTADOS A GOOGLE DRIVE
-        # --------------------------------------------------
-        await mensaje_estado.edit(
-            content=(
-                "✅ ***¡Proceso completado!***\n"
-                "☁️ *Subiendo resultados a Google Drive...*\n"
-            )
-        )
-
-        try:
-            resultado_subida = await asyncio.to_thread(
-                subir_resultados_clean_drive,
-                destino,
-                carpeta_resultados
-            )
-
-        except Exception as e:
-            print(
-                "❌ ASSIST → **ERROR EN SUBIDA CLEAN:**\n"
-                f"{traceback.format_exc()}"
-            )
-
-            return await mensaje_estado.edit(
-                content=(
-                    "⚠️ **NANI_CLEAN terminó correctamente, "
-                    "pero no se pudieron subir los resultados a DRIVE.**\n"
-                    "❌ **Error de subida:**\n"
-                    f"```{str(e)[:1200]}```"
+            try:
+                resultado_descarga = await asyncio.to_thread(
+                    ejecutar_descarga_assist,
+                    resultado_drive,
+                    destino
                 )
+            except Exception as e:
+                print(
+                    f"❌ ASSIST → **Error descargando RAW:** {e}"
+                )
+                return await mensaje_estado.edit(
+                    content=(
+                        "❌ **Ocurrió un error durante la descarga.**\n"
+                        f"```{str(e)[:1200]}```"
+                    )
+                )
+            if not resultado_descarga["ok"]:
+                return await mensaje_estado.edit(
+                    content=(
+                        "⛔ **La descarga no pudo completarse.**\n"
+                        f"Archivos descargados: "
+                        f"`{resultado_descarga['total_archivos']}`\n"
+                        f"Tamaño: `{resultado_descarga['total_mb']} MB`\n"
+                        f"```{str(resultado_descarga['errores'])[:1200]}```"
+                    )
+                )
+            # 10. CREAR REQUEST.JSON
+            try:
+                crear_request_assist(
+                    rol=rol,
+                    capitulo=validacion["capitulo"],
+                    idioma=validacion["idioma"],
+                    carpeta_destino=destino
+                )
+                if rol == "CLEAN":
+                    crear_drive_upload(
+                        rol=rol,
+                        capitulo=validacion["capitulo"],
+                        resultado_drive=resultado_drive,
+                        carpeta_destino=destino
+                    )
+            except Exception as e:
+                print(
+                    f"❌ ASSIST → **Error creando request.json:** {e}"
+                )
+                return await mensaje_estado.edit(
+                    content=(
+                        "⚠️ **Las imágenes se descargaron, "
+                        "pero no fue posible manejar la solicitud.**\n"
+                        f"```{str(e)[:1200]}```"
+                    )
+                )
+            # 11. DESCARGA RAW COMPLETADA
+            print(
+                f"✨ ASSIST → DESCARGA RAW COMPLETADA\n"
+                f"   Proyecto: {validacion['proyecto']}\n"
+                f"   Rol: {rol}\n"
+                f"   Capítulo: {capitulo_carpeta}\n"
+                f"   Archivos: {resultado_descarga['total_archivos']}\n"
+                f"   Tamaño: {resultado_descarga['total_mb']} MB\n"
+                f"   Tiempo: {resultado_descarga['duracion_segundos']} s\n"
+                f"   Destino: {destino}"
             )
-
-        # --------------------------------------------------
-        # 12.3 CLEAN COMPLETADO
-        # --------------------------------------------------
-        print(
-            f"🌸 ASSIST → CLEAN COMPLETADO\n"
-            f"   Proyecto: {validacion['proyecto']}\n"
-            f"   Capítulo: {capitulo_carpeta}\n"
-            f"   Carpeta Drive: {resultado_subida['folder_name']}\n"
-            f"   Archivos: {resultado_subida['total_archivos']}\n"
-            f"   ID: {resultado_subida['folder_id']}"
-        )
-
-        return await mensaje_estado.edit(
-            content=(
-                f"## *¡PROCESO COMPLETADO!*\n"
-                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
-                f"⏱️ *Realizado en {resultado_descarga['duracion_segundos']} minutos*\n" #aqui creo que es más fácil solo poner el tiempo que pasó entre el mensaje de solicitud y la ultima edición, para que no tengamos que hacer contadores de cada cada cosa
-                f"<@{ctx.author.id}>, ***Tiras listas para revisión / corrección manual.***\n"
-                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
-            )
-        )
-
-    # --------------------------------------------------
-    # 13. DESCARGA COMPLETADA — TRAD / OTROS ROLES
-    # --------------------------------------------------
-    await mensaje_estado.edit(
-        content=(
-            "✅ **¡Descarga completada correctamente!**\n\n"
-            f"📁 Proyecto: `{validacion['proyecto']}`\n"
-            f"📌 Rol: `{rol}`\n"
-            f"📖 Capítulo: `{capitulo_carpeta}`\n"
-            f"🖼️ Archivos: "
-            f"`{resultado_descarga['total_archivos']}`\n"
-            f"💾 Tamaño: `{resultado_descarga['total_mb']} MB`\n"
-            f"⏱️ Tiempo: "
-            f"`{resultado_descarga['duracion_segundos']} s`\n\n"
-            "🌸 Las imágenes están listas para el siguiente proceso."
-        )
-    )
-
+            # 12. PROCESAMIENTO AUTOMÁTICO CLEAN
+            if rol == "CLEAN":
+                # 12.1 EJECUTAR KAGGLE
+                await mensaje_estado.edit(
+                    content=(
+                        "🧹 *¡Descarga RAW completada!*\n"
+                        "🚀 ***Iniciando procesamiento de limpieza...***\n"
+                    )
+                )
+                try:
+                    carpeta_resultados = await asyncio.to_thread(
+                        ejecutar_kaggle_clean_assist,
+                        destino
+                    )
+                except Exception as e:
+                    print(
+                        "❌ ASSIST → ERROR EN PROCESAMIENTO KAGGLE:\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    return await mensaje_estado.edit(
+                        content=(
+                            "⚠️ *Las imágenes RAW se descargaron, "
+                            "pero el proceso de limpieza no pudo completarse.*\n"
+                            "❌ **Error de procesamiento:**\n"
+                            f"```{str(e)[:1200]}```"
+                        )
+                    )
+                # 12.2 SUBIR RESULTADOS A GOOGLE DRIVE
+                await mensaje_estado.edit(
+                    content=(
+                        "✅ ***¡Proceso completado!***\n"
+                        "☁️ *Subiendo resultados a Google Drive...*\n"
+                    )
+                )
+                try:
+                    resultado_subida = await asyncio.to_thread(
+                        subir_resultados_clean_drive,
+                        destino,
+                        carpeta_resultados
+                    )
+                except Exception as e:
+                    print(
+                        "❌ ASSIST → **ERROR EN SUBIDA CLEAN:**\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    return await mensaje_estado.edit(
+                        content=(
+                            "⚠️ **NANI_CLEAN terminó correctamente, "
+                            "pero no se pudieron subir los resultados a DRIVE.**\n"
+                            "❌ **Error de subida:**\n"
+                            f"```{str(e)[:1200]}```"
+                        )
+                    )
+#                # 12.3 CLEAN COMPLETADO
+#                print(
+#                    f"🌸 ASSIST → CLEAN COMPLETADO\n"
+#                    f"   Proyecto: {validacion['proyecto']}\n"
+#                    f"   Capítulo: {capitulo_carpeta}\n"
+#                    f"   Carpeta Drive: {resultado_subida['folder_name']}\n"
+#                    f"   Archivos: {resultado_subida['total_archivos']}\n"
+#                    f"   ID: {resultado_subida['folder_id']}"
+#                )
+#                return await mensaje_estado.edit(
+#                    content=(
+#                        f"## *¡PROCESO COMPLETADO!*\n"
+#                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
+#                        f"⏱️ *Realizado en {resultado_descarga['duracion_segundos']} minutos*\n" 
+#                        f"<@{ctx.author.id}>, ***Tiras listas para revisión / corrección manual.***\n"
+#                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
+#                    )
+#                )
+                # 12.3 CLEAN COMPLETADO
+                # 💖 Editado por Rami
+                duracion_minutos = (
+                    time.perf_counter() - inicio_proceso
+                ) / 60
+                enlace_drive = (
+                    "https://drive.google.com/drive/folders/"
+                    f"{resultado_subida['folder_id']}"
+                )
+                print(
+                    f"🌸 ASSIST → CLEAN COMPLETADO\n"
+                    f"   Proyecto: {validacion['proyecto']}\n"
+                    f"   Capítulo: {capitulo_carpeta}\n"
+                    f"   Carpeta Drive: {resultado_subida['folder_name']}\n"
+                    f"   Archivos: {resultado_subida['total_archivos']}\n"
+                    f"   ID: {resultado_subida['folder_id']}\n"
+                    f"   Tiempo total: {duracion_minutos:.2f} minutos"
+                )
+                # Eliminar el mensaje temporal de estado
+                await mensaje_estado.delete()
+                # Mensaje 1: mencionar al usuario
+                await ctx.send(
+                    f"<@{ctx.author.id}>"
+                )
+                # Mensaje 2: resultado y enlace de Drive
+                await ctx.send(
+                    f"## *¡PROCESO CLEAN COMPLETADO!*\n"
+                    f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
+                    f"[CAPÍTULO PROCESADO - "
+                    f"{resultado_subida['folder_name']}]"
+                    f"({enlace_drive})\n"
+                    f"Descargue la carpeta para corregir manualmente.\n"
+                    f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+                )
+                return
+            # 13. DESCARGA COMPLETADA — TRAD / OTROS ROLES
+            await mensaje_estado.edit(
+                content=(
+                    "✅ **¡Descarga completada correctamente!**\n\n"
+                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
+                    f"📌 Rol: `{rol}`\n"
+                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
+                    f"🖼️ Archivos: "
+                    f"`{resultado_descarga['total_archivos']}`\n"
+                    f"💾 Tamaño: `{resultado_descarga['total_mb']} MB`\n"
+                    f"⏱️ Tiempo: "
+                    f"`{resultado_descarga['duracion_segundos']} s`\n\n"
+                    "🌸 Las imágenes están listas para el siguiente proceso."
+                )
+            )  
+    finally:
+        ASSIST_PROCESS_LOCK.release()
 # Ejecutar bot
 bot.run(TOKEN)
