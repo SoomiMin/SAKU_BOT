@@ -7457,7 +7457,7 @@ async def assist(
     # 2. SIN ARGUMENTOS: MOSTRAR ASIGNACIONES
     argumentos = [canal, rol, capitulo, idioma]
     if all(arg is None for arg in argumentos):
-        await ctx.send("🔍 Consultando tus asignaciones...")
+        await ctx.send("🔍 *Consultando tus asignaciones...*")
         try:
             asignaciones = obtener_asignaciones_personales(
                 ctx.author.id
@@ -7514,11 +7514,11 @@ async def assist(
     rol = rol.strip().upper()
     # 4. CREAR MENSAJE DE ESTADO
     mensaje_estado = await ctx.send(
-        "🔍 **Validando solicitud...**"
+        "🔍 *Validando solicitud...*"
     )
     # 5. PASO 1 — VALIDAR ASIGNACIÓN
     await mensaje_estado.edit(
-        content="🔐 **Comprobando asignaciones...**"
+        content="🔐 *Comprobando asignaciones...*"
     )
     try:
         validacion = validar_asignacion_assist(
@@ -7530,14 +7530,14 @@ async def assist(
         )
     except Exception as e:
         print(
-            f"❌ ASSIST → Error validando asignación: {e}"
+            f"❌ ASSIST → **Error validando asignación:** {e}"
         )
         return await mensaje_estado.edit(
             content="❌ **Error al consultar las asignaciones.**"
         )
     if not validacion["ok"]:
         print(
-            f"⛔ ASSIST → Solicitud rechazada: "
+            f"⛔ ASSIST → **Solicitud rechazada:** "
             f"{validacion['motivo']}"
         )
         return await mensaje_estado.edit(
@@ -7548,7 +7548,7 @@ async def assist(
         )
     # 6. PASO 2 — VALIDAR GOOGLE DRIVE
     await mensaje_estado.edit(
-        content="☁️ **Comprobando documentación en Google Drive...**"
+        content="☁️ *Comprobando documentación en Google Drive...*"
     )
     resultado_drive = await encontrar_drive_raw(
         canal,
@@ -7557,7 +7557,7 @@ async def assist(
     )
     if not resultado_drive["ok"]:
         print(
-            f"⛔ ASSIST → Error de Drive: "
+            f"⛔ ASSIST → **Error de Drive:** "
             f"{resultado_drive['motivo']}"
         )
         return await mensaje_estado.edit(
@@ -7611,8 +7611,8 @@ async def assist(
             content=(
                 "⛔ **La carpeta de trabajo ya existe.**\n"
                 f"```{destino}```\n"
-                "No continuaré para evitar sobrescribir "
-                "archivos de una ejecución anterior."
+                "Se rechaza solicitud para protección"
+                "de archivos de una ejecución anterior."
             )
         )
 
@@ -7622,9 +7622,9 @@ async def assist(
 
     await mensaje_estado.edit(
         content=(
-            "☁️ **Descargando imágenes desde Google Drive...**\n"
-            f"Proyecto: `{validacion['proyecto']}`\n"
-            f"Capítulo: `{capitulo_carpeta}`"
+            "☁️ *Descargando imágenes desde Google Drive...*\n"
+#            f"Proyecto: `{validacion['proyecto']}`\n"
+#            f"Capítulo: `{capitulo_carpeta}`"
         )
     )
 
@@ -7637,7 +7637,7 @@ async def assist(
 
     except Exception as e:
         print(
-            f"❌ ASSIST → Error descargando RAW: {e}"
+            f"❌ ASSIST → **Error descargando RAW:** {e}"
         )
 
         return await mensaje_estado.edit(
@@ -7679,13 +7679,13 @@ async def assist(
 
     except Exception as e:
         print(
-            f"❌ ASSIST → Error creando request.json: {e}"
+            f"❌ ASSIST → **Error creando request.json:** {e}"
         )
 
         return await mensaje_estado.edit(
             content=(
                 "⚠️ **Las imágenes se descargaron, "
-                "pero no pude crear request.json.**\n"
+                "pero no fue posible manejar la solicitud.**\n"
                 f"```{str(e)[:1200]}```"
             )
         )
@@ -7715,13 +7715,13 @@ async def assist(
         # --------------------------------------------------
         await mensaje_estado.edit(
             content=(
-                "🧹 **¡Descarga RAW completada!**\n\n"
-                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                f"📖 Capítulo: `{capitulo_carpeta}`\n"
-                f"🖼️ Imágenes RAW: "
-                f"`{resultado_descarga['total_archivos']}`\n\n"
-                "🚀 **Iniciando procesamiento NANI_CLEAN...**\n"
-                "☁️ Enviando imágenes a Kaggle."
+                "🧹 *¡Descarga RAW completada!*\n\n"
+#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+#                f"📖 Capítulo: `{capitulo_carpeta}`\n"
+#                f"🖼️ Imágenes RAW: "
+#                f"`{resultado_descarga['total_archivos']}`\n\n"
+                "🚀 *Iniciando procesamiento NANI_CLEAN...*\n"
+#                "☁️ Enviando imágenes a Kaggle."
             )
         )
 
@@ -7741,10 +7741,10 @@ async def assist(
                 content=(
                     "⚠️ **Las imágenes RAW se descargaron, "
                     "pero NANI_CLEAN no pudo completarse.**\n\n"
-                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
-                    f"💾 RAW conservado en el servidor.\n\n"
-                    "❌ **Error de Kaggle:**\n"
+#                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
+#                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
+#                    f"💾 RAW conservado en el servidor.\n\n"
+                    "❌ **Error de procesamiento:**\n"
                     f"```{str(e)[:1200]}```"
                 )
             )
@@ -7755,9 +7755,9 @@ async def assist(
         await mensaje_estado.edit(
             content=(
                 "✅ **¡NANI_CLEAN completado!**\n\n"
-                "☁️ **Subiendo resultados a Google Drive...**\n"
-                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                f"📖 Capítulo: `{capitulo_carpeta}`"
+                "☁️ *Subiendo resultados a Google Drive...*\n"
+#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+#                f"📖 Capítulo: `{capitulo_carpeta}`"
             )
         )
 
@@ -7770,18 +7770,18 @@ async def assist(
 
         except Exception as e:
             print(
-                "❌ ASSIST → ERROR EN SUBIDA CLEAN:\n"
+                "❌ ASSIST → **ERROR EN SUBIDA CLEAN:**\n"
                 f"{traceback.format_exc()}"
             )
 
             return await mensaje_estado.edit(
                 content=(
                     "⚠️ **NANI_CLEAN terminó correctamente, "
-                    "pero no pude subir los resultados a Drive.**\n\n"
-                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
-                    "💾 Los resultados se conservaron "
-                    "localmente en el servidor.\n\n"
+                    "pero no se pudieron subir los resultados a DRIVE.**\n\n"
+#                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
+#                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
+#                    "💾 Los resultados se conservaron "
+#                    "localmente en el servidor.\n\n"
                     "❌ **Error de subida:**\n"
                     f"```{str(e)[:1200]}```"
                 )
@@ -7801,19 +7801,19 @@ async def assist(
 
         return await mensaje_estado.edit(
             content=(
-                "🎉 **¡PROCESO CLEAN COMPLETADO!**\n\n"
-                f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                f"📌 Rol: `CLEAN`\n"
-                f"📖 Capítulo: `{capitulo_carpeta}`\n"
-                f"🖼️ Imágenes RAW: "
-                f"`{resultado_descarga['total_archivos']}`\n"
-                f"✨ Imágenes procesadas: "
-                f"`{resultado_subida['total_archivos']}`\n"
-                f"☁️ Carpeta Drive: "
-                f"`{resultado_subida['folder_name']}`\n\n"
-                "✅ Kaggle procesó las imágenes.\n"
-                "✅ Google Drive recibió los resultados.\n\n"
-                "🌸 **¡Todo listo!**"
+                f"🎉 *¡PROCESO CLEAN COMPLETADO!*\n\n"
+#                f"📁 Proyecto: `{validacion['proyecto']}`\n"
+#                f"📌 Rol: `CLEAN`\n"
+#                f"📖 Capítulo: `{capitulo_carpeta}`\n"
+#                f"🖼️ Imágenes RAW: "
+#                f"`{resultado_descarga['total_archivos']}`\n"
+#                f"✨ Imágenes procesadas: "
+#                f"`{resultado_subida['total_archivos']}`\n"
+#                f"☁️ Carpeta Drive: "
+#                f"`{resultado_subida['folder_name']}`\n\n"
+#                "✅ Kaggle procesó las imágenes.\n"
+#                "✅ Google Drive recibió los resultados.\n\n"
+                "🌸 *Proceda a realizar revisión / corrección manual.*"
             )
         )
 
