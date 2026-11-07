@@ -7801,7 +7801,7 @@ async def assist(
 
         return await mensaje_estado.edit(
             content=(
-                f"🎉 *¡PROCESO CLEAN COMPLETADO!*\n\n"
+                f"🎉 *¡PROCESO CLEAN COMPLETADO!*\n"
 #                f"📁 Proyecto: `{validacion['proyecto']}`\n"
 #                f"📌 Rol: `CLEAN`\n"
 #                f"📖 Capítulo: `{capitulo_carpeta}`\n"
@@ -7813,7 +7813,8 @@ async def assist(
 #                f"`{resultado_subida['folder_name']}`\n\n"
 #                "✅ Kaggle procesó las imágenes.\n"
 #                "✅ Google Drive recibió los resultados.\n\n"
-                "🌸 *Proceda a realizar revisión / corrección manual.*"
+                f"⏱️ *Procesado en {resultado_descarga['duracion_segundos']}\n*"
+                f"🌸 *Proceda a realizar revisión / corrección manual.*"
             )
         )
 
