@@ -145,7 +145,10 @@ SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
 NANI_ASSIST_CHANNEL_ID = 1567409556919816252
-ROL_MOD2 = 1569049020742115409
+ROL_1 = 1455689714165223597
+ROL_2 = 1455690022677381171
+ROL_3 = 1357527918653345803
+ROL_4 = 1569049020742115409
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
@@ -4055,196 +4058,139 @@ def limpiar_output_clean_assist():
         "errores": errores
     }
 
+# 💖 Editado por Rami
 @asynccontextmanager
 async def bloqueo_temporal_assist(canal):
     """
-    Bloquea temporalmente la escritura en el canal de NANI ASSIST.
+    Alterna los permisos de escritura de los roles autorizados.
 
-    - Conserva los permisos originales.
-    - Bloquea mensajes y mensajes en hilos.
-    - Impide crear hilos durante el proceso.
-    - Mantiene habilitado al bot.
-    - Restaura los permisos al terminar, incluso si ocurre un error.
-    - Si el canal estaba sincronizado con su categoría,
-      restaura también esa sincronización.
+    OFF:
+        send_messages = False
+        send_messages_in_threads = False
+        create_public_threads = False
+        create_private_threads = False
+
+    ON:
+        Los cuatro permisos pasan a True.
+
+    Solo modifica ROL_1, ROL_2 y ROL_3.
     """
+    roles_controlados = (
+        "ROL_1",
+        "ROL_2",
+        "ROL_3",
+        "ROL_4"
+    )
 
-    permisos_bloqueados = (
+    permisos_escritura = (
         "send_messages",
         "send_messages_in_threads",
         "create_public_threads",
         "create_private_threads"
     )
 
-    # 1. GUARDAR ESTADO ORIGINAL
-    estaba_sincronizado = canal.permissions_synced
-    permisos_originales = dict(canal.overwrites)
+    # --------------------------------------------------
+    # 1. LOCALIZAR Y VALIDAR LOS ROLES
+    # --------------------------------------------------
+    roles = []
 
-    # Trabajamos sobre una copia para no alterar el original.
-    nuevos_permisos = dict(permisos_originales)
+    for nombre in roles_controlados:
+        coincidencias = [
+            rol
+            for rol in canal.guild.roles
+            if rol.name == nombre
+        ]
 
-    # 2. BLOQUEAR @EVERYONE
-    everyone = canal.guild.default_role
-
-    overwrite_everyone = copy.copy(
-        nuevos_permisos.get(
-            everyone,
-            discord.PermissionOverwrite()
-        )
-    )
-
-    for permiso in permisos_bloqueados:
-        setattr(overwrite_everyone, permiso, False)
-
-    nuevos_permisos[everyone] = overwrite_everyone
-
-    # 3. EVITAR QUE OTROS PERMISOS EXPLÍCITOS
-    #    PERMITAN ESCRIBIR DURANTE EL BLOQUEO.
-    for objetivo, overwrite in list(nuevos_permisos.items()):
-
-        if objetivo == everyone:
-            continue
-
-        # Los administradores no pueden ser bloqueados
-        # mediante sobrescrituras normales de Discord.
-        if isinstance(objetivo, discord.Role):
-            if objetivo.permissions.administrator:
-                continue
-
-        elif isinstance(objetivo, discord.Member):
-
-            # Mantener al bot fuera de los bloqueos.
-            if bot.user and objetivo.id == bot.user.id:
-                continue
-
-            if objetivo.guild_permissions.administrator:
-                continue
-
-        else:
-            continue
-
-        nuevo_overwrite = copy.copy(overwrite)
-
-        for permiso in permisos_bloqueados:
-            if getattr(nuevo_overwrite, permiso) is True:
-                setattr(nuevo_overwrite, permiso, False)
-
-        nuevos_permisos[objetivo] = nuevo_overwrite
-
-    # 4. ASEGURAR QUE EL BOT PUEDA SEGUIR ESCRIBIENDO
-    bot_member = canal.guild.get_member(bot.user.id)
-
-    if bot_member:
-        overwrite_bot = copy.copy(
-            nuevos_permisos.get(
-                bot_member,
-                discord.PermissionOverwrite()
+        if len(coincidencias) != 1:
+            raise RuntimeError(
+                f"No pude localizar un único rol llamado "
+                f"{nombre}. Coincidencias: {len(coincidencias)}"
             )
+
+        roles.append(coincidencias[0])
+
+    # --------------------------------------------------
+    # 2. APLICAR ESTADO OFF
+    # --------------------------------------------------
+    try:
+        nuevos_permisos = dict(canal.overwrites)
+
+        for rol in roles:
+            overwrite = copy.copy(
+                nuevos_permisos.get(
+                    rol,
+                    discord.PermissionOverwrite()
+                )
+            )
+
+            for permiso in permisos_escritura:
+                setattr(overwrite, permiso, False)
+
+            nuevos_permisos[rol] = overwrite
+
+        print(
+            f"🔒 ASSIST → Desactivando escritura "
+            f"para {len(roles)} roles."
         )
 
-        overwrite_bot.send_messages = True
-        overwrite_bot.send_messages_in_threads = True
+        await canal.edit(
+            overwrites=nuevos_permisos,
+            reason="NANI ASSIST: inicio del procesamiento."
+        )
 
-        nuevos_permisos[bot_member] = overwrite_bot
+        print("✅ ASSIST → Permisos OFF aplicados.")
 
-    # 5. APLICAR BLOQUEO
-    print(
-        f"🔒 ASSIST → Bloqueando temporalmente "
-        f"el canal #{canal.name}"
-    )
-
-    await canal.edit(
-        overwrites=nuevos_permisos,
-        reason="NANI ASSIST: proceso automático en ejecución."
-    )
-
-    try:
         yield
 
     finally:
-
-        # 6. RESTAURAR PERMISOS ORIGINALES
+        # --------------------------------------------------
+        # 3. APLICAR ESTADO ON
+        # --------------------------------------------------
         print(
-            f"🔓 ASSIST → Restaurando permisos "
-            f"del canal #{canal.name}"
+            "🔓 ASSIST → Reactivando permisos "
+            "de escritura."
         )
 
         try:
+            # Obtener el estado actual del canal.
+            canal_actualizado = (
+                await canal.guild.fetch_channel(canal.id)
+            )
 
-            if estaba_sincronizado:
+            permisos_actuales = dict(
+                canal_actualizado.overwrites
+            )
 
-                await canal.edit(
-                    sync_permissions=True,
-                    reason="NANI ASSIST: restauración de permisos."
+            # Reactivar únicamente los roles controlados.
+            for rol in roles:
+                overwrite = copy.copy(
+                    permisos_actuales.get(
+                        rol,
+                        discord.PermissionOverwrite()
+                    )
                 )
 
-            else:
+                for permiso in permisos_escritura:
+                    setattr(overwrite, permiso, True)
 
-                await canal.edit(
-                    overwrites=permisos_originales,
-                    reason="NANI ASSIST: restauración de permisos."
-                )
+                permisos_actuales[rol] = overwrite
 
-            print(
-                f"✅ ASSIST → Permisos restaurados "
-                f"correctamente en #{canal.name}"
+            await canal_actualizado.edit(
+                overwrites=permisos_actuales,
+                reason="NANI ASSIST: finalización del procesamiento."
             )
-            canal_actualizado = await canal.guild.fetch_channel(canal.id)
-            print("\n🔎 ASSIST → DIAGNÓSTICO DE PERMISOS")
-            print(
-                f"Sincronizado con categoría: "
-                f"{canal_actualizado.permissions_synced}"
-            )
-            everyone = canal.guild.default_role
-            permisos_everyone = canal_actualizado.overwrites_for(everyone)
-            print(
-                f"@everyone → enviar mensajes: "
-                f"{permisos_everyone.send_messages}"
-            )
-            print(
-                f"@everyone → enviar en hilos: "
-                f"{permisos_everyone.send_messages_in_threads}"
-            )
-            print(
-                f"@everyone → crear hilos públicos: "
-                f"{permisos_everyone.create_public_threads}"
-            )
-            print(
-                f"@everyone → crear hilos privados: "
-                f"{permisos_everyone.create_private_threads}"
-            )
-            for rol in canal.guild.roles:
-                overwrite = canal_actualizado.overwrites_for(rol)
-                if any(
-                    getattr(overwrite, permiso) is not None
-                    for permiso in (            
-                        "send_messages",
-                        "send_messages_in_threads",
-                        "create_public_threads",
-                        "create_private_threads"
-                    )
-                ):
-                    print(
-                        f"ROL: {rol.name} | "
-                        f"Enviar: {overwrite.send_messages} | "
-                        f"Hilos: {overwrite.send_messages_in_threads} | "
-                        f"Crear públicos: {overwrite.create_public_threads} | "
-                        f"Crear privados: {overwrite.create_private_threads}"
-                    )
-            print("🔎 ASSIST → FIN DEL DIAGNÓSTICO\n")
-
-        except Exception as e:
 
             print(
-                "🚨 ASSIST → ERROR CRÍTICO "
-                "RESTAURANDO PERMISOS:\n"
+                f"✅ ASSIST → Permisos ON aplicados "
+                f"para: {', '.join(roles_controlados)}"
+            )
+
+        except Exception:
+            print(
+                "🚨 ASSIST → ERROR REACTIVANDO PERMISOS:\n"
                 f"{traceback.format_exc()}"
             )
-
-            raise RuntimeError(
-                f"No se pudieron restaurar los permisos "
-                f"de #{canal.name}: {e}"
-            ) from e
+            raise
 
 # Eventos de Discord
 @bot.event
