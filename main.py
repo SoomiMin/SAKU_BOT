@@ -145,6 +145,7 @@ SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
 NANI_ASSIST_CHANNEL_ID = 1567409556919816252
+ROL_MOD2 = 1569049020742115409
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
@@ -4083,7 +4084,7 @@ async def bloqueo_temporal_assist(canal):
     nuevos_permisos = dict(permisos_originales)
 
     # 2. BLOQUEAR @EVERYONE
-    everyone = canal.guild.default_role
+    everyone = ROL_MOD2
 
     overwrite_everyone = copy.copy(
         nuevos_permisos.get(
