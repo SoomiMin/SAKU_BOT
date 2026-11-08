@@ -7933,8 +7933,8 @@ async def assist(
                     f"## *¡PROCESO CLEAN COMPLETADO!*\n"
                     f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
                     f"**[CAPÍTULO PROCESADO - "
-                    f"{resultado_subida['folder_name']}]**"
-                    f"({enlace_drive})\n"
+                    f"{resultado_subida['folder_name']}]"
+                    f"({enlace_drive})**\n"
                     f"Descargue la carpeta para corregir manualmente.\n"
                     f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
                 )
