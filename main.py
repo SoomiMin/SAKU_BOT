@@ -4188,6 +4188,49 @@ async def bloqueo_temporal_assist(canal):
                 f"✅ ASSIST → Permisos restaurados "
                 f"correctamente en #{canal.name}"
             )
+            canal_actualizado = await canal.guild.fetch_channel(canal.id)
+            print("\n🔎 ASSIST → DIAGNÓSTICO DE PERMISOS")
+            print(
+                f"Sincronizado con categoría: "
+                f"{canal_actualizado.permissions_synced}"
+            )
+            everyone = canal.guild.default_role
+            permisos_everyone = canal_actualizado.overwrites_for(everyone)
+            print(
+                f"@everyone → enviar mensajes: "
+                f"{permisos_everyone.send_messages}"
+            )
+            print(
+                f"@everyone → enviar en hilos: "
+                f"{permisos_everyone.send_messages_in_threads}"
+            )
+            print(
+                f"@everyone → crear hilos públicos: "
+                f"{permisos_everyone.create_public_threads}"
+            )
+            print(
+                f"@everyone → crear hilos privados: "
+                f"{permisos_everyone.create_private_threads}"
+            )
+            for rol in canal.guild.roles:
+                overwrite = canal_actualizado.overwrites_for(rol)
+                if any(
+                    getattr(overwrite, permiso) is not None
+                    for permiso in (            
+                        "send_messages",
+                        "send_messages_in_threads",
+                        "create_public_threads",
+                        "create_private_threads"
+                    )
+                ):
+                    print(
+                        f"ROL: {rol.name} | "
+                        f"Enviar: {overwrite.send_messages} | "
+                        f"Hilos: {overwrite.send_messages_in_threads} | "
+                        f"Crear públicos: {overwrite.create_public_threads} | "
+                        f"Crear privados: {overwrite.create_private_threads}"
+                    )
+            print("🔎 ASSIST → FIN DEL DIAGNÓSTICO\n")
 
         except Exception as e:
 
