@@ -4084,7 +4084,7 @@ async def bloqueo_temporal_assist(canal):
     nuevos_permisos = dict(permisos_originales)
 
     # 2. BLOQUEAR @EVERYONE
-    everyone = ROL_MOD2
+    everyone = canal.guild.default_role
 
     overwrite_everyone = copy.copy(
         nuevos_permisos.get(
