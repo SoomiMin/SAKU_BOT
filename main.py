@@ -3589,8 +3589,8 @@ def subir_resultados_clean_drive(carpeta_capitulo, carpeta_resultados):
     Estructura:
         CLEAN/
         └── 13_PR/
-            ├── 01_PR.jpg
-            └── 02_PR.jpg
+            ├── CAP_01_PR.jpg
+            └── CAP_02_PR.jpg
 
     No sobrescribe ni mezcla carpetas existentes.
     Verifica los nombres y tamaños después de subir.
@@ -3654,7 +3654,7 @@ def subir_resultados_clean_drive(carpeta_capitulo, carpeta_resultados):
             if archivo.is_file()
             and re.fullmatch(r"\d+_PR\.jpg", archivo.name, re.IGNORECASE)
         ],
-        key=lambda archivo: int(archivo.stem.split("_")[0])
+        key=lambda archivo: int(archivo.stem.split("_")[-2])
     )
 
     if not archivos:
@@ -3965,7 +3965,7 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
         for archivo in carpeta_resultados.iterdir()
         if archivo.is_file()
         and re.fullmatch(
-            r"\d+_PR\.jpg",
+            r"(?:\d+_)?\d+_PR\.jpg",
             archivo.name,
             re.IGNORECASE
         )
@@ -3984,6 +3984,75 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
     print("=" * 60)
 
     return str(carpeta_resultados)
+
+# 💖 Editado por Rami
+def limpiar_output_clean_assist():
+    """
+    Elimina las carpetas de capítulos dentro de CLEAN/output.
+
+    - Conserva la carpeta output.
+    - Elimina todas sus subcarpetas.
+    - No se ejecuta hasta confirmar una subida CLEAN correcta.
+    """
+    import shutil
+
+    base_dir = Path(__file__).resolve().parent
+
+    carpeta_output = (
+        base_dir
+        / "NANI_ASSIST"
+        / "CLEAN"
+        / "output"
+    ).resolve()
+
+    # 1. COMPROBAR QUE LA RUTA ES LA ESPERADA
+    if (
+        carpeta_output.name != "output"
+        or carpeta_output.parent.name != "CLEAN"
+        or not carpeta_output.is_dir()
+    ):
+        raise RuntimeError(
+            f"Ruta output no válida: {carpeta_output}"
+        )
+
+    # 2. LOCALIZAR CARPETAS DE CAPÍTULOS
+    carpetas = [
+        elemento
+        for elemento in carpeta_output.iterdir()
+        if elemento.is_dir() and not elemento.is_symlink()
+    ]
+
+    eliminadas = 0
+    errores = []
+
+    # 3. ELIMINAR CARPETAS
+    for carpeta in carpetas:
+        try:
+            shutil.rmtree(carpeta)
+            eliminadas += 1
+            print(
+                f"🗑️ CLEAN → Eliminada carpeta: {carpeta.name}"
+            )
+        except Exception as e:
+            errores.append(
+                f"{carpeta.name}: {e}"
+            )
+
+    # 4. INFORMAR RESULTADO
+    print(
+        f"🧹 CLEAN → LIMPIEZA DE OUTPUT FINALIZADA\n"
+        f"   Carpetas eliminadas: {eliminadas}\n"
+        f"   Errores: {len(errores)}"
+    )
+
+    for error in errores:
+        print(f"⚠️ CLEAN → {error}")
+
+    return {
+        "ok": len(errores) == 0,
+        "eliminadas": eliminadas,
+        "errores": errores
+    }
 
 @asynccontextmanager
 async def bloqueo_temporal_assist(canal):
@@ -7903,6 +7972,29 @@ async def assist(
                             "❌ **Error de subida:**\n"
                             f"```{str(e)[:1200]}```"
                         )
+                    )
+                # 12.2.1 LIMPIAR OUTPUT TRAS SUBIDA VERIFICADA
+                if resultado_subida.get("ok") is True:
+                    try:
+                        resultado_limpieza = await asyncio.to_thread(
+                            limpiar_output_clean_assist
+                        )
+
+                        if not resultado_limpieza["ok"]:
+                            print(
+                                "⚠️ ASSIST → La subida fue correcta, "
+                                "pero quedaron carpetas sin eliminar."
+                            )
+
+                    except Exception:
+                        print(
+                            "⚠️ ASSIST → Error limpiando CLEAN/output:\n"
+                            f"{traceback.format_exc()}"
+                        )
+                else:
+                    print(
+                        "⚠️ ASSIST → No se confirmó la subida. "
+                        "Se conserva CLEAN/output."
                     )
                 # 12.3 CLEAN COMPLETADO
                 # 💖 Editado por Rami
