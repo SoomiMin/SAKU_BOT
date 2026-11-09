@@ -4188,6 +4188,127 @@ async def bloqueo_temporal_assist(canal):
             )
             raise
 
+# 💖 Editado por Rami
+def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma):
+    """
+    Ejecuta kaggle_trad.py desde SAKU_BOT.
+    Espera a que Kaggle termine y devuelve el TXT generado.
+    """
+    import subprocess
+
+    carpeta_capitulo = Path(carpeta_capitulo).resolve()
+    idioma = str(idioma).strip().upper()
+
+    base_dir = Path(__file__).resolve().parent
+
+    script_kaggle = (
+        base_dir / "NANI_ASSIST" / "TRAD" / "kaggle_trad.py"
+    )
+    python_venv = base_dir / "venv" / "bin" / "python"
+
+    # ------------------------------------------------------
+    # 1. VALIDAR RUTAS Y PARÁMETROS
+    # ------------------------------------------------------
+    if not script_kaggle.is_file():
+        raise FileNotFoundError(
+            f"No encontré kaggle_trad.py: {script_kaggle}"
+        )
+
+    if not python_venv.is_file():
+        raise FileNotFoundError(
+            f"No encontré Python del entorno virtual: {python_venv}"
+        )
+
+    if not carpeta_capitulo.is_dir():
+        raise NotADirectoryError(
+            f"No existe la carpeta del capítulo: {carpeta_capitulo}"
+        )
+
+    if idioma not in ("KR", "ING", "INDO", "CHIN"):
+        raise ValueError(f"Idioma no válido: {idioma}")
+
+    capitulo = carpeta_capitulo.name
+
+    carpeta_output = script_kaggle.parent / "output"
+    archivo_txt = carpeta_output / f"{capitulo}_{idioma}.txt"
+
+    # ------------------------------------------------------
+    # 2. EVITAR UTILIZAR UN TXT DE UNA EJECUCIÓN ANTERIOR
+    # ------------------------------------------------------
+    if archivo_txt.exists():
+        archivo_txt.unlink()
+        print(
+            f"🗑️ TRAD → TXT anterior eliminado: {archivo_txt.name}"
+        )
+
+    print("\n" + "=" * 60)
+    print("🌸 ASSIST → INICIANDO NANI_TRAD")
+    print(f"📁 Capítulo: {carpeta_capitulo}")
+    print(f"🌐 Idioma: {idioma}")
+    print("=" * 60)
+
+    # ------------------------------------------------------
+    # 3. EJECUTAR KAGGLE Y ESPERAR SU FINALIZACIÓN
+    # ------------------------------------------------------
+    proceso = subprocess.run(
+        [
+            str(python_venv),
+            str(script_kaggle),
+            idioma,
+            str(carpeta_capitulo)
+        ],
+        cwd=str(script_kaggle.parent),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False
+    )
+
+    # Mostrar registros en la consola de PM2
+    if proceso.stdout:
+        print(proceso.stdout)
+
+    if proceso.stderr:
+        print(proceso.stderr)
+
+    # ------------------------------------------------------
+    # 4. COMPROBAR RESULTADO DEL PROCESO
+    # ------------------------------------------------------
+    if proceso.returncode != 0:
+        detalle = (
+            proceso.stderr
+            or proceso.stdout
+            or "Sin detalles adicionales."
+        )[-6000:]
+
+        raise RuntimeError(
+            "Kaggle TRAD terminó con código "
+            f"{proceso.returncode}:\n{detalle}"
+        )
+
+    # ------------------------------------------------------
+    # 5. VALIDAR TXT GENERADO
+    # ------------------------------------------------------
+    if not archivo_txt.is_file():
+        raise FileNotFoundError(
+            "Kaggle terminó correctamente, pero no encontré "
+            f"el TXT esperado: {archivo_txt}"
+        )
+
+    if archivo_txt.stat().st_size <= 0:
+        raise RuntimeError(
+            f"El TXT generado está vacío: {archivo_txt}"
+        )
+
+    print("\n" + "=" * 60)
+    print("✅ ASSIST → NANI_TRAD COMPLETADO")
+    print(f"📄 TXT: {archivo_txt}")
+    print(f"💾 Tamaño: {archivo_txt.stat().st_size:,} bytes")
+    print("=" * 60)
+
+    return str(archivo_txt)
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
@@ -8006,7 +8127,7 @@ async def assist(
                 await mensaje_estado.delete()
                 # Mensaje 1: mencionar al usuario
                 await ctx.send(
-                    f"<@{ctx.author.id}>"
+                    f"<@{ctx.author.id}> ⤵︎"
                 )
                 # Mensaje 2: resultado y enlace de Drive
                 await ctx.send(
@@ -8019,21 +8140,82 @@ async def assist(
                     f"__### -+-+- 🔒 S I S T E M A  L I B E R A D O 🔒 +-+-__"
                 )
                 return
-            # 13. DESCARGA COMPLETADA — TRAD / OTROS ROLES
-            await mensaje_estado.edit(
-                content=(
-                    "✅ **¡Descarga completada correctamente!**\n\n"
-                    f"📁 Proyecto: `{validacion['proyecto']}`\n"
-                    f"📌 Rol: `{rol}`\n"
-                    f"📖 Capítulo: `{capitulo_carpeta}`\n"
-                    f"🖼️ Archivos: "
-                    f"`{resultado_descarga['total_archivos']}`\n"
-                    f"💾 Tamaño: `{resultado_descarga['total_mb']} MB`\n"
-                    f"⏱️ Tiempo: "
-                    f"`{resultado_descarga['duracion_segundos']} s`\n\n"
-                    "🌸 Las imágenes están listas para el siguiente proceso."
+
+            # 💖 Editado por Rami
+            # 13. PROCESAMIENTO AUTOMÁTICO TRAD
+            if rol == "TRAD":
+
+                # 13.1 INICIAR KAGGLE
+                await mensaje_estado.edit(
+                    content=(
+                        "✅ *¡Descarga RAW completada!*\n"
+                        "🌐 ***Iniciando reconocimiento de texto...***\n"
+                        f"📖 Idioma: `{validacion['idioma']}`\n"
+                        "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+                    )
                 )
-            )  
+
+                try:
+                    archivo_txt = await asyncio.to_thread(
+                        ejecutar_kaggle_trad_assist,
+                        destino,
+                        validacion["idioma"]
+                    )
+
+                except Exception as e:
+                    print(
+                        "❌ ASSIST → ERROR EN PROCESAMIENTO TRAD:\n"
+                        f"{traceback.format_exc()}"
+                    )
+
+                    return await mensaje_estado.edit(
+                        content=(
+                            "⚠️ **Las imágenes RAW se descargaron, "
+                            "pero el reconocimiento de texto no pudo completarse.**\n"
+                            "❌ **Error de procesamiento:**\n"
+                            f"```{str(e)[:1200]}```"
+                        )
+                    )
+
+                # 13.2 CALCULAR TIEMPO TOTAL
+                duracion_minutos = (
+                    time.perf_counter() - inicio_proceso
+                ) / 60
+
+                print(
+                    f"🌸 ASSIST → TRAD COMPLETADO\n"
+                    f"   Proyecto: {validacion['proyecto']}\n"
+                    f"   Capítulo: {capitulo_carpeta}\n"
+                    f"   Idioma: {validacion['idioma']}\n"
+                    f"   TXT: {archivo_txt}\n"
+                    f"   Tiempo total: {duracion_minutos:.2f} minutos"
+                )
+
+                # 13.3 ELIMINAR MENSAJE TEMPORAL
+                await mensaje_estado.delete()
+
+                # 13.4 ENTREGAR TXT COMO ADJUNTO
+                await ctx.send(
+                    content=(
+                        f"<@{ctx.author.id}> ⤵︎\n"
+                        f"## 🌸 ¡PROCESO TRAD COMPLETADO!\n"
+                        f"📖 **Capítulo:** `{capitulo_carpeta}`\n"
+                        f"🌐 **Idioma:** `{validacion['idioma']}`\n"
+                        f"⏱️ **Tiempo:** `{duracion_minutos:.2f} minutos`\n\n"
+                        "⚠️ El reconocimiento no es perfecto. "
+                        "Este archivo es un apoyo adicional y puede "
+                        "contener errores; revisa el texto junto "
+                        "con las imágenes originales.\n\n"
+                        "__### -+-+- 🔒 S I S T E M A  L I B E R A D O 🔒 +-+-__"
+                    ),
+                    file=discord.File(
+                        archivo_txt,
+                        filename=Path(archivo_txt).name
+                    )
+                )
+
+                return
+
     finally:
         ASSIST_PROCESS_LOCK.release()
 # Ejecutar bot
