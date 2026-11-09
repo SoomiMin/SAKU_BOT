@@ -3861,7 +3861,10 @@ def subir_resultados_clean_drive(carpeta_capitulo, carpeta_resultados):
     }
 
 # 💖 Editado por Rami
-def ejecutar_kaggle_clean_assist(carpeta_capitulo):
+def ejecutar_kaggle_clean_assist(
+    carpeta_capitulo,
+    archivo_estado=None
+):
     """
     Ejecuta kaggle_clean.py desde SAKU_BOT para un capítulo CLEAN.
     Espera a que Kaggle termine y devuelve la carpeta de resultados.
@@ -3869,11 +3872,12 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
     import subprocess
 
     carpeta_capitulo = Path(carpeta_capitulo).resolve()
-
     base_dir = Path(__file__).resolve().parent
+
     script_kaggle = (
         base_dir / "NANI_ASSIST" / "CLEAN" / "kaggle_clean.py"
     )
+
     python_venv = base_dir / "venv" / "bin" / "python"
 
     # ------------------------------------------------------
@@ -3899,6 +3903,15 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
     print(f"📁 Capítulo: {carpeta_capitulo}")
     print("=" * 60)
 
+    # 💖 Editado por Rami
+    # Transmitir la ruta del archivo de estado al launcher.
+    entorno = os.environ.copy()
+
+    if archivo_estado:
+        entorno["NANI_CLEAN_STATUS_FILE"] = str(
+            Path(archivo_estado).resolve()
+        )
+
     # ------------------------------------------------------
     # 2. EJECUTAR KAGGLE Y ESPERAR SU FINALIZACIÓN
     # ------------------------------------------------------
@@ -3914,10 +3927,11 @@ def ejecutar_kaggle_clean_assist(carpeta_capitulo):
         text=True,
         encoding="utf-8",
         errors="replace",
-        check=False
+        check=False,
+        env=entorno
     )
 
-    # Mostrar los registros en la consola de PM2
+    # Mostrar los registros en la consola de PM2.
     if proceso.stdout:
         print(proceso.stdout)
 
@@ -4310,17 +4324,18 @@ def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma, archivo_estado=None):
     return str(archivo_txt)
 
 # 💖 Editado por Rami
-async def monitorear_estado_trad(
+async def monitorear_estado_kaggle(
     mensaje_estado,
     archivo_estado,
     prefijo,
-    sufijo
+    sufijo,
+    descripcion_running="Procesando...",
+    etiqueta_log="KAGGLE"
 ):
     """
-    Lee el estado publicado por kaggle_trad.py
+    Lee el estado publicado por el launcher de Kaggle
     y actualiza el mismo mensaje de Discord.
     """
-
     import asyncio
 
     ultima_modificacion = None
@@ -4334,7 +4349,6 @@ async def monitorear_estado_trad(
                 # Actualizar únicamente cuando el launcher
                 # haya publicado una nueva consulta.
                 if modificacion != ultima_modificacion:
-
                     estado = archivo_estado.read_text(
                         encoding="utf-8"
                     ).strip().upper()
@@ -4343,10 +4357,12 @@ async def monitorear_estado_trad(
                         descripcion = "En espera de servidor..."
 
                     elif "RUNNING" in estado:
-                        descripcion = "Procesando..."
+                        descripcion = descripcion_running
 
                     elif "ACKNOWLEDGED" in estado:
-                        descripcion = "Solicitud recibida; esperando ejecución..."
+                        descripcion = (
+                            "Solicitud recibida; esperando ejecución..."
+                        )
 
                     elif any(
                         palabra in estado
@@ -4371,7 +4387,9 @@ async def monitorear_estado_trad(
                         descripcion = "Servidor reportó un problema."
 
                     else:
-                        descripcion = "Consultando estado del servidor..."
+                        descripcion = (
+                            "Consultando estado del servidor..."
+                        )
 
                     # Alternar símbolo en cada actualización.
                     animacion = not animacion
@@ -4396,8 +4414,8 @@ async def monitorear_estado_trad(
 
         except discord.HTTPException as e:
             print(
-                "⚠️ ASSIST → No se pudo actualizar "
-                f"el estado TRAD en Discord: {e}"
+                f"⚠️ ASSIST → No se pudo actualizar "
+                f"el estado {etiqueta_log} en Discord: {e}"
             )
 
         await asyncio.sleep(1)
@@ -8123,21 +8141,48 @@ async def assist(
             # 12. PROCESAMIENTO AUTOMÁTICO CLEAN
             if rol == "CLEAN":
                 # 12.1 EJECUTAR KAGGLE
+                # 💖 Editado por Rami
+                # Archivo temporal único para esta ejecución.
+                archivo_estado = (
+                    Path("/tmp") /
+                    f"saku_clean_status_{ctx.message.id}.txt"
+                )
+                archivo_estado.unlink(missing_ok=True)
+                prefijo_estado = (
+                    "🧹 *¡Descarga RAW completada!*\n"
+                    "🚀 ***Iniciando procesamiento de limpieza...***\n"
+                )
+                sufijo_estado = (
+                    "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+                )
                 await mensaje_estado.edit(
                     content=(
-                        "🧹 *¡Descarga RAW completada!*\n"
-                        "🚀 ***Iniciando procesamiento de limpieza...***\n"
-                        f"__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+                        f"{prefijo_estado}"
+                        "◉ **Estado:** *Preparando servidor...*\n"
+                        f"{sufijo_estado}"
+                    )
+                )
+                # 💖 Editado por Rami
+                # Iniciar monitor de estado de Kaggle.
+                monitor_estado = asyncio.create_task(
+                    monitorear_estado_kaggle(
+                        mensaje_estado,
+                        archivo_estado,
+                        prefijo_estado,
+                        sufijo_estado,
+                        descripcion_running="Limpiando imágenes...",
+                        etiqueta_log="CLEAN"
                     )
                 )
                 try:
                     carpeta_resultados = await asyncio.to_thread(
                         ejecutar_kaggle_clean_assist,
-                        destino
+                        destino,
+                        archivo_estado
                     )
                 except Exception as e:
                     print(
-                        "❌ ASSIST → **ERROR EN PROCESAMIENTO EN SERVIDOR**:\n"
+                        "❌ ASSIST → ERROR EN PROCESAMIENTO EN SERVIDOR:\n"
                         f"{traceback.format_exc()}"
                     )
                     return await mensaje_estado.edit(
@@ -8148,6 +8193,15 @@ async def assist(
                             f"```{str(e)[:1200]}```"
                         )
                     )
+                finally:
+                    # Detener el monitor cuando termine Kaggle.
+                    monitor_estado.cancel()
+                    try:
+                        await monitor_estado
+                    except asyncio.CancelledError:
+                        pass
+                    # Eliminar el archivo temporal.
+                    archivo_estado.unlink(missing_ok=True)          
                 # 12.2 SUBIR RESULTADOS A GOOGLE DRIVE
                 await mensaje_estado.edit(
                     content=(
@@ -8262,11 +8316,13 @@ async def assist(
                 # 💖 Editado por Rami
                 # Iniciar monitor de estado de Kaggle.
                 monitor_estado = asyncio.create_task(
-                    monitorear_estado_trad(
+                    monitorear_estado_kaggle(
                         mensaje_estado,
                         archivo_estado,
                         prefijo_estado,
-                        sufijo_estado
+                        sufijo_estado,
+                        descripcion_running="Procesando...",
+                        etiqueta_log="TRAD"
                     )
                 )
                 try:
