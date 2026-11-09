@@ -8150,7 +8150,7 @@ async def assist(
                     content=(
                         "✅ *¡Descarga RAW completada!*\n"
                         "🌐 ***Iniciando reconocimiento de texto...***\n"
-                        f"📖 Idioma: `{validacion['idioma']}`\n"
+#                        f"📖 Idioma: `{validacion['idioma']}`\n"
                         "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
                     )
                 )
