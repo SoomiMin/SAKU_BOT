@@ -145,10 +145,6 @@ SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
 NANI_ASSIST_CHANNEL_ID = 1567409556919816252
-ROL_1 = 1455689714165223597
-ROL_2 = 1455690022677381171
-ROL_3 = 1357527918653345803
-ROL_4 = 1569049020742115409
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
@@ -7747,7 +7743,7 @@ async def assist(
     if not validacion["ok"]:
         print(
             f"⛔ ASSIST → **Solicitud rechazada:** "
-            f"{validacion['motivo']}"
+            f"```{validacion['motivo']}```"
         )
         return await mensaje_estado.edit(
             content=(
@@ -7767,7 +7763,7 @@ async def assist(
     if not resultado_drive["ok"]:
         print(
             f"⛔ ASSIST → **Error de Drive:** "
-            f"{resultado_drive['motivo']}"
+            f"```{resultado_drive['motivo']}```"
         )
         return await mensaje_estado.edit(
             content=(
@@ -7917,6 +7913,7 @@ async def assist(
                     content=(
                         "🧹 *¡Descarga RAW completada!*\n"
                         "🚀 ***Iniciando procesamiento de limpieza...***\n"
+                        f"__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
                     )
                 )
                 try:
@@ -7942,6 +7939,7 @@ async def assist(
                     content=(
                         "✅ ***¡Proceso completado!***\n"
                         "☁️ *Subiendo resultados a Google Drive...*\n"
+                        f"__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
                     )
                 )
                 try:
@@ -8018,7 +8016,7 @@ async def assist(
                     f"{resultado_subida['folder_name']}]"
                     f"({enlace_drive})**\n"
                     f"Descargue la carpeta para corregir manualmente.\n"
-                    f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+                    f"__### -+-+- 🔒 S I S T E M A  L I B E R A D O 🔒 +-+-__"
                 )
                 return
             # 13. DESCARGA COMPLETADA — TRAD / OTROS ROLES
