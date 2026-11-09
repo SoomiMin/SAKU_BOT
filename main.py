@@ -8203,8 +8203,8 @@ async def assist(
 #                        f"🌐 **Idioma:** `{validacion['idioma']}`\n"
 #                        f"⏱️ **Tiempo:** `{duracion_minutos:.2f} minutos`\n\n"
                         f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
-                        f```"El reconocimiento no es perfecto. Este archivo es un apoyo adicional y puede contener errores; proceda con cuidado.```\n"
-                        "__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
+                        f"```El reconocimiento no es perfecto. Este archivo es un apoyo adicional y puede contener errores; proceda con cuidado.```\n"
+                        f"__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
                     ),
                     file=discord.File(
                         archivo_txt,
