@@ -3472,13 +3472,7 @@ def ejecutar_descarga_assist(resultado_drive, destino):
         resultado_drive["capitulo_id"],
         destino
     )
-# 💖 Editado por Rami
-# ==========================================================
-# AUTENTICACIÓN GOOGLE — NANI ASSIST
-# ==========================================================
-
 GOOGLE_ASSIST_TOKEN = Path("/root/NANI_POSTING/token.json")
-
 GOOGLE_ASSIST_SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets.readonly"
@@ -4384,7 +4378,7 @@ async def monitorear_estado_trad(
                     simbolo = "◉" if animacion else "○"
 
                     linea_estado = (
-                        f"🌙 {simbolo} **Estado:** {descripcion}"
+                        f"{simbolo} **Estado:** {descripcion}"
                     )
 
                     await mensaje_estado.edit(
@@ -8143,7 +8137,7 @@ async def assist(
                     )
                 except Exception as e:
                     print(
-                        "❌ ASSIST → ERROR EN PROCESAMIENTO KAGGLE:\n"
+                        "❌ ASSIST → **ERROR EN PROCESAMIENTO EN SERVIDOR**:\n"
                         f"{traceback.format_exc()}"
                     )
                     return await mensaje_estado.edit(
@@ -8261,7 +8255,7 @@ async def assist(
                 await mensaje_estado.edit(
                     content=(
                         f"{prefijo_estado}"
-                        "🌙 ◉ **Estado:** Preparando Kaggle...\n"
+                        "◉ **Estado:** *Preparando servidor...*\n"
                         f"{sufijo_estado}"
                     )
                 )
@@ -8326,9 +8320,6 @@ async def assist(
                     content=(
                         f"<@{ctx.author.id}> ⤵︎\n"
                         f"## *¡PROCESO OCR COMPLETADO!*\n"
-#                        f"📖 **Capítulo:** `{capitulo_carpeta}`\n"
-#                        f"🌐 **Idioma:** `{validacion['idioma']}`\n"
-#                        f"⏱️ **Tiempo:** `{duracion_minutos:.2f} minutos`\n\n"
                         f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
                         f"```El reconocimiento no es perfecto. Este archivo es un apoyo adicional y puede contener errores; proceda con cuidado.```\n"
                         f"__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
