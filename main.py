@@ -4340,10 +4340,10 @@ async def monitorear_estado_trad(
                     ).strip().upper()
 
                     if "QUEUED" in estado:
-                        descripcion = "En espera de Kaggle..."
+                        descripcion = "En espera de servidor..."
 
                     elif "RUNNING" in estado:
-                        descripcion = "NANI está procesando..."
+                        descripcion = "Procesando..."
 
                     elif "ACKNOWLEDGED" in estado:
                         descripcion = "Solicitud recibida; esperando ejecución..."
@@ -4368,10 +4368,10 @@ async def monitorear_estado_trad(
                             "CANCELED",
                         )
                     ):
-                        descripcion = "Kaggle reportó un problema."
+                        descripcion = "Servidor reportó un problema."
 
                     else:
-                        descripcion = "Consultando estado de Kaggle..."
+                        descripcion = "Consultando estado del servidor..."
 
                     # Alternar símbolo en cada actualización.
                     animacion = not animacion
