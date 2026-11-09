@@ -8314,7 +8314,7 @@ async def assist(
                 
                     # Eliminar el archivo temporal.
                     archivo_estado.unlink(missing_ok=True)
-                
+                except Exception as e:
                 except Exception as e:
                     print(
                         "❌ ASSIST → ERROR EN PROCESAMIENTO TRAD:\n"
