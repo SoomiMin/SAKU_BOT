@@ -8243,34 +8243,21 @@ async def assist(
             # 💖 Editado por Rami
             # 13. PROCESAMIENTO AUTOMÁTICO TRAD
             if rol == "TRAD":
-
                 # 13.1 INICIAR KAGGLE
-#                await mensaje_estado.edit(
-#                    content=(
-#                        "✅ *¡Descarga RAW completada!*\n"
-#                        "🌐 ***Iniciando reconocimiento de texto...***\n"
-#                        "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
-#                    )
-#                )
                 # 💖 Editado por Rami
-                
                 # Archivo temporal único para esta ejecución.
                 archivo_estado = (
                     Path("/tmp") /
                     f"saku_trad_status_{ctx.message.id}.txt"
                 )
-                
                 archivo_estado.unlink(missing_ok=True)
-                
                 prefijo_estado = (
                     "✅ *¡Descarga RAW completada!*\n"
                     "🌐 ***Iniciando reconocimiento de texto...***\n"
                 )
-                
                 sufijo_estado = (
                     "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
                 )
-                
                 await mensaje_estado.edit(
                     content=(
                         f"{prefijo_estado}"
@@ -8278,14 +8265,8 @@ async def assist(
                         f"{sufijo_estado}"
                     )
                 )
-
-#                try:
-#                    archivo_txt = await asyncio.to_thread(
-#                        ejecutar_kaggle_trad_assist,
-#                        destino,
-#                        validacion["idioma"]
-#                    )
-                # 💖 Editado por Rami                
+                # 💖 Editado por Rami
+                # Iniciar monitor de estado de Kaggle.
                 monitor_estado = asyncio.create_task(
                     monitorear_estado_trad(
                         mensaje_estado,
@@ -8294,33 +8275,18 @@ async def assist(
                         sufijo_estado
                     )
                 )
-                
                 try:
                     archivo_txt = await asyncio.to_thread(
                         ejecutar_kaggle_trad_assist,
-                        destino,
+                        destino,                
                         validacion["idioma"],
                         archivo_estado
                     )
-                
-                finally:
-                    # Detener el monitor cuando termine Kaggle.
-                    monitor_estado.cancel()
-                
-                    try:
-                        await monitor_estado
-                    except asyncio.CancelledError:
-                        pass
-                
-                    # Eliminar el archivo temporal.
-                    archivo_estado.unlink(missing_ok=True)
-                except Exception as e:
                 except Exception as e:
                     print(
                         "❌ ASSIST → ERROR EN PROCESAMIENTO TRAD:\n"
                         f"{traceback.format_exc()}"
                     )
-
                     return await mensaje_estado.edit(
                         content=(
                             "⚠️ **Las imágenes RAW se descargaron, "
@@ -8329,7 +8295,15 @@ async def assist(
                             f"```{str(e)[:1200]}```"
                         )
                     )
-
+                finally:
+                    # Detener el monitor cuando termine Kaggle.
+                    monitor_estado.cancel()
+                    try:
+                        await monitor_estado
+                    except asyncio.CancelledError:
+                        pass
+                    # Eliminar el archivo temporal.
+                    archivo_estado.unlink(missing_ok=True)
                 # 13.2 CALCULAR TIEMPO TOTAL
                 duracion_minutos = (
                     time.perf_counter() - inicio_proceso
