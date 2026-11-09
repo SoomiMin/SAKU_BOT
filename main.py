@@ -4189,7 +4189,7 @@ async def bloqueo_temporal_assist(canal):
             raise
 
 # 💖 Editado por Rami
-def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma):
+def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma, archivo_estado=None):
     """
     Ejecuta kaggle_trad.py desde SAKU_BOT.
     Espera a que Kaggle termine y devuelve el TXT generado.
@@ -4247,6 +4247,11 @@ def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma):
     print(f"🌐 Idioma: {idioma}")
     print("=" * 60)
 
+    entorno = os.environ.copy()
+    if archivo_estado:
+        entorno["NANI_TRAD_STATUS_FILE"] = str(
+            Path(archivo_estado).resolve()
+        )
     # ------------------------------------------------------
     # 3. EJECUTAR KAGGLE Y ESPERAR SU FINALIZACIÓN
     # ------------------------------------------------------
@@ -4262,7 +4267,8 @@ def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma):
         text=True,
         encoding="utf-8",
         errors="replace",
-        check=False
+        check=False,
+        env=entorno,
     )
 
     # Mostrar registros en la consola de PM2
@@ -4308,6 +4314,99 @@ def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma):
     print("=" * 60)
 
     return str(archivo_txt)
+
+# 💖 Editado por Rami
+async def monitorear_estado_trad(
+    mensaje_estado,
+    archivo_estado,
+    prefijo,
+    sufijo
+):
+    """
+    Lee el estado publicado por kaggle_trad.py
+    y actualiza el mismo mensaje de Discord.
+    """
+
+    import asyncio
+
+    ultima_modificacion = None
+    animacion = False
+
+    while True:
+        try:
+            if archivo_estado.exists():
+                modificacion = archivo_estado.stat().st_mtime_ns
+
+                # Actualizar únicamente cuando el launcher
+                # haya publicado una nueva consulta.
+                if modificacion != ultima_modificacion:
+
+                    estado = archivo_estado.read_text(
+                        encoding="utf-8"
+                    ).strip().upper()
+
+                    if "QUEUED" in estado:
+                        descripcion = "En espera de Kaggle..."
+
+                    elif "RUNNING" in estado:
+                        descripcion = "NANI está procesando..."
+
+                    elif "ACKNOWLEDGED" in estado:
+                        descripcion = "Solicitud recibida; esperando ejecución..."
+
+                    elif any(
+                        palabra in estado
+                        for palabra in (
+                            "COMPLETE",
+                            "COMPLETED",
+                            "SUCCESS",
+                            "SUCCEEDED",
+                        )
+                    ):
+                        descripcion = "Procesamiento completado."
+
+                    elif any(
+                        palabra in estado
+                        for palabra in (
+                            "ERROR",
+                            "FAILED",
+                            "CANCELLED",
+                            "CANCELED",
+                        )
+                    ):
+                        descripcion = "Kaggle reportó un problema."
+
+                    else:
+                        descripcion = "Consultando estado de Kaggle..."
+
+                    # Alternar símbolo en cada actualización.
+                    animacion = not animacion
+                    simbolo = "◉" if animacion else "○"
+
+                    linea_estado = (
+                        f"🌙 {simbolo} **Estado:** {descripcion}"
+                    )
+
+                    await mensaje_estado.edit(
+                        content=(
+                            f"{prefijo}"
+                            f"{linea_estado}\n"
+                            f"{sufijo}"
+                        )
+                    )
+
+                    ultima_modificacion = modificacion
+
+        except FileNotFoundError:
+            pass
+
+        except discord.HTTPException as e:
+            print(
+                "⚠️ ASSIST → No se pudo actualizar "
+                f"el estado TRAD en Discord: {e}"
+            )
+
+        await asyncio.sleep(1)
 
 # Eventos de Discord
 @bot.event
@@ -8146,22 +8245,76 @@ async def assist(
             if rol == "TRAD":
 
                 # 13.1 INICIAR KAGGLE
+#                await mensaje_estado.edit(
+#                    content=(
+#                        "✅ *¡Descarga RAW completada!*\n"
+#                        "🌐 ***Iniciando reconocimiento de texto...***\n"
+#                        "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+#                    )
+#                )
+                # 💖 Editado por Rami
+                
+                # Archivo temporal único para esta ejecución.
+                archivo_estado = (
+                    Path("/tmp") /
+                    f"saku_trad_status_{ctx.message.id}.txt"
+                )
+                
+                archivo_estado.unlink(missing_ok=True)
+                
+                prefijo_estado = (
+                    "✅ *¡Descarga RAW completada!*\n"
+                    "🌐 ***Iniciando reconocimiento de texto...***\n"
+                )
+                
+                sufijo_estado = (
+                    "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+                )
+                
                 await mensaje_estado.edit(
                     content=(
-                        "✅ *¡Descarga RAW completada!*\n"
-                        "🌐 ***Iniciando reconocimiento de texto...***\n"
-#                        f"📖 Idioma: `{validacion['idioma']}`\n"
-                        "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+                        f"{prefijo_estado}"
+                        "🌙 ◉ **Estado:** Preparando Kaggle...\n"
+                        f"{sufijo_estado}"
                     )
                 )
 
+#                try:
+#                    archivo_txt = await asyncio.to_thread(
+#                        ejecutar_kaggle_trad_assist,
+#                        destino,
+#                        validacion["idioma"]
+#                    )
+                # 💖 Editado por Rami                
+                monitor_estado = asyncio.create_task(
+                    monitorear_estado_trad(
+                        mensaje_estado,
+                        archivo_estado,
+                        prefijo_estado,
+                        sufijo_estado
+                    )
+                )
+                
                 try:
                     archivo_txt = await asyncio.to_thread(
                         ejecutar_kaggle_trad_assist,
                         destino,
-                        validacion["idioma"]
+                        validacion["idioma"],
+                        archivo_estado
                     )
-
+                
+                finally:
+                    # Detener el monitor cuando termine Kaggle.
+                    monitor_estado.cancel()
+                
+                    try:
+                        await monitor_estado
+                    except asyncio.CancelledError:
+                        pass
+                
+                    # Eliminar el archivo temporal.
+                    archivo_estado.unlink(missing_ok=True)
+                
                 except Exception as e:
                     print(
                         "❌ ASSIST → ERROR EN PROCESAMIENTO TRAD:\n"
