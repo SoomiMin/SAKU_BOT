@@ -8390,5 +8390,75 @@ async def assist(
 
     finally:
         ASSIST_PROCESS_LOCK.release()
+# Comando !Borrar
+@bot.command(name="borrar")
+@rol_permitido("acmin")
+async def borrar(ctx):
+
+    # 1. RESTRINGIR AL CANAL DE SAKU-ASISTENTE
+    if ctx.channel.id != NANI_ASSIST_CHANNEL_ID:
+        return
+
+    # 2. EVITAR BORRAR DURANTE UN PROCESO
+    if ASSIST_PROCESS_LOCK.locked():
+        return await ctx.send(
+            "⛔ **No se puede limpiar mientras hay un proceso activo.**"
+        )
+
+    # Adquirir el lock sin esperar.
+    adquirido = await ASSIST_PROCESS_LOCK.acquire()
+
+    if not adquirido:
+        return await ctx.send(
+            "⛔ **Hay otro proceso utilizando Saku-Asistente.**"
+        )
+
+    try:
+        import shutil
+
+        base_dir = Path(__file__).resolve().parent
+
+        carpetas = [
+            base_dir / "NANI_ASSIST" / "working",
+            base_dir / "NANI_ASSIST" / "TRAD" / "output",
+            base_dir / "NANI_ASSIST" / "CLEAN" / "output"
+        ]
+
+        eliminados = 0
+
+        for carpeta in carpetas:
+            if not carpeta.is_dir():
+                continue
+
+            for elemento in carpeta.iterdir():
+
+                if elemento.is_symlink() or elemento.is_file():
+                    elemento.unlink()
+
+                elif elemento.is_dir():
+                    shutil.rmtree(elemento)
+
+                eliminados += 1
+
+        await ctx.send(
+            "🧹 **LIMPIEZA COMPLETADA**\n"
+            f"🗑️ Elementos eliminados: **{eliminados}**\n"
+            "📁 Se conservaron las carpetas principales."
+        )
+
+    except Exception as e:
+        print(
+            "❌ ASSIST → ERROR EN !borrar:\n"
+            f"{traceback.format_exc()}"
+        )
+
+        await ctx.send(
+            f"⚠️ **No se pudo completar la limpieza:**\n"
+            f"```{str(e)[:1000]}```"
+        )
+
+    finally:
+        ASSIST_PROCESS_LOCK.release()
+
 # Ejecutar bot
 bot.run(TOKEN)
