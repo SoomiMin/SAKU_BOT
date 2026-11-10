@@ -4329,7 +4329,7 @@ async def monitorear_estado_kaggle(
     archivo_estado,
     prefijo,
     sufijo,
-    descripcion_running="Procesando...",
+    descripcion_running="*Procesando...*",
     etiqueta_log="KAGGLE"
 ):
     """
@@ -4354,14 +4354,14 @@ async def monitorear_estado_kaggle(
                     ).strip().upper()
 
                     if "QUEUED" in estado:
-                        descripcion = "En espera de servidor..."
+                        descripcion = "*En espera de servidor...*"
 
                     elif "RUNNING" in estado:
                         descripcion = descripcion_running
 
                     elif "ACKNOWLEDGED" in estado:
                         descripcion = (
-                            "Solicitud recibida; esperando ejecución..."
+                            "*Solicitud recibida; esperando ejecución...*"
                         )
 
                     elif any(
@@ -4373,7 +4373,7 @@ async def monitorear_estado_kaggle(
                             "SUCCEEDED",
                         )
                     ):
-                        descripcion = "Procesamiento completado."
+                        descripcion = "*Procesamiento completado.*"
 
                     elif any(
                         palabra in estado
@@ -4384,11 +4384,11 @@ async def monitorear_estado_kaggle(
                             "CANCELED",
                         )
                     ):
-                        descripcion = "Servidor reportó un problema."
+                        descripcion = "*Servidor reportó un problema.*"
 
                     else:
                         descripcion = (
-                            "Consultando estado del servidor..."
+                            "*Consultando estado del servidor...*"
                         )
 
                     # Alternar símbolo en cada actualización.
@@ -4414,7 +4414,7 @@ async def monitorear_estado_kaggle(
 
         except discord.HTTPException as e:
             print(
-                f"⚠️ ASSIST → No se pudo actualizar "
+                f"⚠️ ASSIST → **No se pudo actualizar** "
                 f"el estado {etiqueta_log} en Discord: {e}"
             )
 
@@ -8048,8 +8048,7 @@ async def assist(
             content=(
                 "⛔ **La carpeta de trabajo ya existe.**\n"
                 f"```{destino}```\n"
-                "Se rechaza solicitud para protección"
-                "de archivos de una ejecución anterior."
+                "Si desea reanudar un proceso que ha quedado incompleto, pida a un ADMINISTRADOR limpieza de archivos temporales con **!borrar**."
             )
         )
     # 8.5. CONTROLAR EJECUCIONES SIMULTÁNEAS
@@ -8442,13 +8441,13 @@ async def borrar(ctx):
 
         await ctx.send(
             "🧹 **LIMPIEZA COMPLETADA**\n"
-            f"🗑️ Elementos eliminados: **{eliminados}**\n"
-            "📁 Se conservaron las carpetas principales."
+            f"Elementos eliminados: **{eliminados}**\n"
+            "*Se conservaron las carpetas principales.*"
         )
 
     except Exception as e:
         print(
-            "❌ ASSIST → ERROR EN !borrar:\n"
+            "❌ ASSIST → **ERROR EN !borrar:**\n"
             f"{traceback.format_exc()}"
         )
 
