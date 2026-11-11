@@ -145,6 +145,7 @@ SHEET_NAME4 = os.getenv("SHEET_NAME4")
 ROL_NEWBIE = 1483529826253148201
 PROJECT_COVERS_CHANNEL_ID = 1451574623064821771
 NANI_ASSIST_CHANNEL_ID = 1567409556919816252
+SAKU_RUSH_CHANNEL_ID = 1569918178224775269
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 TELEGRAM_GRUPO_ID = int(os.getenv("TELEGRAM_GRUPO_ID"))
@@ -3332,7 +3333,7 @@ async def encontrar_drive_raw(channel, capitulo, rol="TRAD"):
     )
     return resultado
 # 💖 Editado por Rami
-def descargar_carpeta_drive(service, folder_id, destino):
+def descargar_carpeta_drive(service, folder_id, destino, permitir_subcarpetas=True):
     """
     Descarga recursivamente el contenido de una carpeta de Drive.
     Conserva las subcarpetas y mide el tiempo y tamaño descargado.
@@ -3359,6 +3360,11 @@ def descargar_carpeta_drive(service, folder_id, destino):
                 continue
             ruta_elemento = ruta_local / nombre_seguro
             if mime == MIME_CARPETA:
+                if not permitir_subcarpetas:
+                    errores.append(
+                        f"Subcarpeta no permitida en RUSH: {nombre}"
+                    )
+                    continue
                 ruta_elemento.mkdir(parents=True, exist_ok=True)
                 recorrer(elemento_id, ruta_elemento)
                 continue
@@ -3528,7 +3534,6 @@ def authenticate_assist():
 def crear_drive_upload(rol, capitulo, resultado_drive, carpeta_destino):
     """
     Genera drive_upload.json solo para CLEAN.
-
     Ejemplo:
     {
         "chapter": "4",
@@ -3536,7 +3541,6 @@ def crear_drive_upload(rol, capitulo, resultado_drive, carpeta_destino):
         "clean_name": "CLEAN"
     }
     """
-
     rol = str(rol).strip().upper()
 
     if rol != "CLEAN":
@@ -4324,7 +4328,6 @@ def ejecutar_kaggle_trad_assist(carpeta_capitulo, idioma, archivo_estado=None):
 
     return str(archivo_txt)
 
-# 💖 Editado por Rami
 async def monitorear_estado_kaggle(
     mensaje_estado,
     archivo_estado,
@@ -4420,6 +4423,188 @@ async def monitorear_estado_kaggle(
             )
 
         await asyncio.sleep(1)
+# Funciones de Saku_Rush
+def autenticar_y_validar_acceso_rush(
+    folder_id,
+    correo_esperado="soulferre1995@gmail.com"
+):
+    """
+    Autentica Google Drive y comprueba que la cuenta esperada
+    tenga capacidad efectiva para agregar archivos a la carpeta.
+
+    Devuelve también el servicio autenticado para reutilizarlo
+    durante la validación, descarga y subida.
+    """
+
+    resultado = {
+        "ok": False,
+        "motivo": None,
+        "service": None,
+        "correo": None,
+        "carpeta_nombre": None
+    }
+
+    try:
+        # 1. AUTENTICAR OAUTH
+        creds = authenticate_assist()
+
+        service = build(
+            "drive",
+            "v3",
+            credentials=creds,
+            cache_discovery=False
+        )
+
+        # 2. COMPROBAR LA CUENTA AUTENTICADA
+        usuario = service.about().get(
+            fields="user(emailAddress)"
+        ).execute()
+
+        correo_actual = str(
+            usuario.get("user", {}).get("emailAddress", "")
+        ).strip().lower()
+
+        correo_esperado = correo_esperado.strip().lower()
+
+        resultado["correo"] = correo_actual
+
+        if correo_actual != correo_esperado:
+            resultado["motivo"] = (
+                "La cuenta autenticada de Google Drive no es "
+                f"la esperada.\n"
+                f"Cuenta actual: {correo_actual or 'Desconocida'}\n"
+                f"Cuenta requerida: {correo_esperado}"
+            )
+            return resultado
+
+        # 3. CONSULTAR CARPETA Y CAPACIDAD DE ESCRITURA
+        carpeta = service.files().get(
+            fileId=folder_id,
+            fields="id,name,mimeType,capabilities(canAddChildren)",
+            supportsAllDrives=True
+        ).execute()
+
+        if carpeta.get("mimeType") != "application/vnd.google-apps.folder":
+            resultado["motivo"] = (
+                "El enlace proporcionado no corresponde "
+                "a una carpeta de Google Drive."
+            )
+            return resultado
+
+        resultado["carpeta_nombre"] = carpeta.get("name")
+
+        puede_agregar = (
+            carpeta.get("capabilities", {}).get("canAddChildren")
+        )
+
+        if puede_agregar is not True:
+            resultado["motivo"] = (
+                f"La cuenta {correo_actual} puede acceder a la carpeta "
+                f"'{carpeta.get('name')}', pero no tiene permiso "
+                "para agregar archivos."
+            )
+            return resultado
+
+        # 4. ACCESO CORRECTO
+        resultado.update({
+            "ok": True,
+            "service": service
+        })
+
+        print(
+            "✅ RUSH → ACCESO A DRIVE VALIDADO\n"
+            f"   Cuenta: {correo_actual}\n"
+            f"   Carpeta: {carpeta.get('name')}\n"
+            "   Puede agregar archivos: SÍ"
+        )
+
+        return resultado
+
+    except Exception as e:
+        resultado["motivo"] = (
+            f"No fue posible autenticar o comprobar el acceso "
+            f"a Google Drive: {e}"
+        )
+        return resultado
+
+
+# 💖 Editado por Rami
+def validar_carpeta_rush_drive(service, folder_id):
+    """
+    Comprueba que la carpeta de Drive:
+    - No contenga subcarpetas.
+    - Contenga únicamente imágenes compatibles.
+    - Tenga al menos una imagen.
+    - No contenga archivos que terminen en _PR.
+    """
+    extensiones_validas = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp"
+    }
+    MIME_CARPETA = "application/vnd.google-apps.folder"
+
+    elementos = listar_elementos_drive(service, folder_id)
+
+    imagenes = []
+    archivos_pr = []
+    errores = []
+
+    for item in elementos:
+        nombre = item["name"]
+        mime = item["mimeType"]
+
+        if mime == MIME_CARPETA:
+            errores.append(
+                f"Subcarpeta no permitida: {nombre}"
+            )
+            continue
+
+        # 💖 Editado por Rami
+        # Detectar archivos procesados anteriormente.
+        if Path(nombre).stem.upper().endswith("_PR"):
+            archivos_pr.append(nombre)
+            continue
+
+        if mime.startswith("application/vnd.google-apps."):
+            errores.append(
+                f"Archivo nativo de Google no compatible: {nombre}"
+            )
+            continue
+
+        extension = Path(nombre).suffix.lower()
+
+        if extension not in extensiones_validas:
+            errores.append(
+                f"Archivo no compatible: {nombre}"
+            )
+            continue
+
+        imagenes.append(item)
+
+    # 💖 Editado por Rami
+    # Cancelar si existe al menos un archivo procesado.
+    if archivos_pr:
+        errores.insert(
+            0,
+            "La carpeta ya contiene archivos procesados (_PR): "
+            + ", ".join(archivos_pr)
+        )
+
+    if not imagenes:
+        errores.append(
+            "La carpeta no contiene imágenes compatibles."
+        )
+
+    return {
+        "ok": len(errores) == 0,
+        "imagenes": imagenes,
+        "total_imagenes": len(imagenes),
+        "archivos_pr": archivos_pr,
+        "errores": errores
+    }
+
 
 # Eventos de Discord
 @bot.event
@@ -8064,8 +8249,6 @@ async def assist(
     await ASSIST_PROCESS_LOCK.acquire()
     try:
         async with bloqueo_temporal_assist(ctx.channel):
-
-            # 💖 Editado por Rami
             # Inicio del tiempo total del proceso
             inicio_proceso = time.perf_counter()
         
@@ -8141,7 +8324,6 @@ async def assist(
             # 12. PROCESAMIENTO AUTOMÁTICO CLEAN
             if rol == "CLEAN":
                 # 12.1 EJECUTAR KAGGLE
-                # 💖 Editado por Rami
                 # Archivo temporal único para esta ejecución.
                 archivo_estado = (
                     Path("/tmp") /
@@ -8162,7 +8344,6 @@ async def assist(
                         f"{sufijo_estado}"
                     )
                 )
-                # 💖 Editado por Rami
                 # Iniciar monitor de estado de Kaggle.
                 monitor_estado = asyncio.create_task(
                     monitorear_estado_kaggle(
@@ -8253,7 +8434,6 @@ async def assist(
                         "Se conserva CLEAN/output."
                     )
                 # 12.3 CLEAN COMPLETADO
-                # 💖 Editado por Rami
                 duracion_minutos = (
                     time.perf_counter() - inicio_proceso
                 ) / 60
@@ -8287,12 +8467,9 @@ async def assist(
                     f"__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
                 )
                 return
-
-            # 💖 Editado por Rami
             # 13. PROCESAMIENTO AUTOMÁTICO TRAD
             if rol == "TRAD":
                 # 13.1 INICIAR KAGGLE
-                # 💖 Editado por Rami
                 # Archivo temporal único para esta ejecución.
                 archivo_estado = (
                     Path("/tmp") /
@@ -8313,7 +8490,6 @@ async def assist(
                         f"{sufijo_estado}"
                     )
                 )
-                # 💖 Editado por Rami
                 # Iniciar monitor de estado de Kaggle.
                 monitor_estado = asyncio.create_task(
                     monitorear_estado_kaggle(
@@ -8390,75 +8566,74 @@ async def assist(
 
     finally:
         ASSIST_PROCESS_LOCK.release()
+# Comando !Rush
+@bot.command(name="rush")
+@rol_permitido("acmin")
+async def rush(ctx, *argumentos):
+    pass
+#esperando implementacion :3
+    
 # Comando !Borrar
 @bot.command(name="borrar")
 @rol_permitido("acmin")
 async def borrar(ctx):
+    if ctx.channel.id == NANI_ASSIST_CHANNEL_ID:
+        # 1. RESTRINGIR AL CANAL DE SAKU-ASISTENTE
+        if ctx.channel.id != NANI_ASSIST_CHANNEL_ID:
+            return
+        # 2. EVITAR BORRAR DURANTE UN PROCESO
+        if ASSIST_PROCESS_LOCK.locked():
+            return await ctx.send(
+                "⛔ **No se puede limpiar mientras hay un proceso activo.**"
+            )
+        # Adquirir el lock sin esperar.
+        adquirido = await ASSIST_PROCESS_LOCK.acquire()
+        if not adquirido:
+            return await ctx.send(
+                "⛔ **Hay otro proceso utilizando Saku-Asistente.**"
+            )
+        try:
+            import shutil
+            base_dir = Path(__file__).resolve().parent
+            carpetas = [
+                base_dir / "NANI_ASSIST" / "working",
+                base_dir / "NANI_ASSIST" / "TRAD" / "output",
+                base_dir / "NANI_ASSIST" / "CLEAN" / "output"
+            ]
+            eliminados = 0
+            for carpeta in carpetas:
+                if not carpeta.is_dir():
+                    continue
+                for elemento in carpeta.iterdir():
+                    if elemento.is_symlink() or elemento.is_file():
+                        elemento.unlink()
+                    elif elemento.is_dir():
+                        shutil.rmtree(elemento)
+                    eliminados += 1
+            await ctx.send(
+                "🧹 **LIMPIEZA COMPLETADA**\n"
+                f"Elementos eliminados: **{eliminados}**\n"
+                "*Se conservaron las carpetas principales.*"
+            )
+        except Exception as e:
+            print(
+                "❌ ASSIST → **ERROR EN !borrar:**\n"
+                f"{traceback.format_exc()}"
+            )
+            await ctx.send(
+                f"⚠️ **No se pudo completar la limpieza:**\n"
+                f"```{str(e)[:1000]}```"
+            )
+        finally:
+            ASSIST_PROCESS_LOCK.release()
 
-    # 1. RESTRINGIR AL CANAL DE SAKU-ASISTENTE
-    if ctx.channel.id != NANI_ASSIST_CHANNEL_ID:
+    elif ctx.channel.id == SAKU_RUSH_CHANNEL_ID:
+        # 🔹 LIMPIEZA RUSH
+        # Usar RUSH_PROCESS_LOCK.
+        # Limpiar exclusivamente las rutas RUSH.
+
+    else:
         return
-
-    # 2. EVITAR BORRAR DURANTE UN PROCESO
-    if ASSIST_PROCESS_LOCK.locked():
-        return await ctx.send(
-            "⛔ **No se puede limpiar mientras hay un proceso activo.**"
-        )
-
-    # Adquirir el lock sin esperar.
-    adquirido = await ASSIST_PROCESS_LOCK.acquire()
-
-    if not adquirido:
-        return await ctx.send(
-            "⛔ **Hay otro proceso utilizando Saku-Asistente.**"
-        )
-
-    try:
-        import shutil
-
-        base_dir = Path(__file__).resolve().parent
-
-        carpetas = [
-            base_dir / "NANI_ASSIST" / "working",
-            base_dir / "NANI_ASSIST" / "TRAD" / "output",
-            base_dir / "NANI_ASSIST" / "CLEAN" / "output"
-        ]
-
-        eliminados = 0
-
-        for carpeta in carpetas:
-            if not carpeta.is_dir():
-                continue
-
-            for elemento in carpeta.iterdir():
-
-                if elemento.is_symlink() or elemento.is_file():
-                    elemento.unlink()
-
-                elif elemento.is_dir():
-                    shutil.rmtree(elemento)
-
-                eliminados += 1
-
-        await ctx.send(
-            "🧹 **LIMPIEZA COMPLETADA**\n"
-            f"Elementos eliminados: **{eliminados}**\n"
-            "*Se conservaron las carpetas principales.*"
-        )
-
-    except Exception as e:
-        print(
-            "❌ ASSIST → **ERROR EN !borrar:**\n"
-            f"{traceback.format_exc()}"
-        )
-
-        await ctx.send(
-            f"⚠️ **No se pudo completar la limpieza:**\n"
-            f"```{str(e)[:1000]}```"
-        )
-
-    finally:
-        ASSIST_PROCESS_LOCK.release()
 
 # Ejecutar bot
 bot.run(TOKEN)
