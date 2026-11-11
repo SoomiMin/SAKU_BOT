@@ -275,6 +275,7 @@ last_assign_time = 0
 DRIVE_COOLDOWN = 45  # segundos
 last_drive_time = 0
 ASSIST_PROCESS_LOCK = asyncio.Lock()
+RUSH_PROCESS_LOCK = asyncio.Lock()
 
 @bot.event
 async def on_reaction_add(reaction, user):
