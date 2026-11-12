@@ -4745,6 +4745,550 @@ def descargar_carpeta_rush(service, imagenes, destino):
     return resultado
 
 
+# 💖 Editado por Rami
+def ejecutar_kaggle_rush(
+    operacion,
+    carpeta_capitulo,
+    archivo_estado=None,
+    idioma=None
+):
+    """
+    Ejecuta la notebook CLEAN u OCR de RUSH.
+    Espera a que Kaggle termine y devuelve la ruta del resultado.
+    """
+    import subprocess
+
+    operacion = str(operacion).strip().upper()
+    carpeta_capitulo = Path(carpeta_capitulo).resolve()
+
+    base_dir = Path(__file__).resolve().parent
+    python_venv = base_dir / "venv" / "bin" / "python"
+
+    # ------------------------------------------------------
+    # 1. SELECCIONAR NOTEBOOK Y VALIDAR PARÁMETROS
+    # ------------------------------------------------------
+    if operacion == "CLEAN":
+        carpeta_launcher = RUSH_CLEAN_DIR
+        script_kaggle = carpeta_launcher / "kaggle_rush_clean.py"
+        variable_estado = "NANI_RUSH_CLEAN_STATUS_FILE"
+
+    elif operacion == "OCR":
+        carpeta_launcher = RUSH_OCR_DIR
+        script_kaggle = carpeta_launcher / "kaggle_rush_ocr.py"
+        variable_estado = "NANI_RUSH_OCR_STATUS_FILE"
+
+        idioma = str(idioma or "").strip().upper()
+
+        if idioma not in {"ING", "INDO", "CHIN", "KR", "RU"}:
+            raise ValueError(f"Idioma RUSH no válido: {idioma}")
+
+    else:
+        raise ValueError(f"Operación RUSH no válida: {operacion}")
+
+    if not script_kaggle.is_file():
+        raise FileNotFoundError(
+            f"No encontré el ejecutor de RUSH: {script_kaggle}"
+        )
+
+    if not python_venv.is_file():
+        raise FileNotFoundError(
+            f"No encontré Python del entorno virtual: {python_venv}"
+        )
+
+    if not carpeta_capitulo.is_dir():
+        raise NotADirectoryError(
+            f"No existe la carpeta del capítulo: {carpeta_capitulo}"
+        )
+
+    capitulo = carpeta_capitulo.name
+
+    # ------------------------------------------------------
+    # 2. PREPARAR ARCHIVO DE ESTADO
+    # ------------------------------------------------------
+    entorno = os.environ.copy()
+
+    if archivo_estado:
+        entorno[variable_estado] = str(
+            Path(archivo_estado).resolve()
+        )
+
+    # ------------------------------------------------------
+    # 3. CONSTRUIR COMANDO
+    # ------------------------------------------------------
+    comando = [
+        str(python_venv),
+        str(script_kaggle)
+    ]
+
+    if operacion == "CLEAN":
+        comando.extend([
+            str(carpeta_capitulo),
+            "--no-pause"
+        ])
+    else:
+        comando.extend([
+            idioma,
+            str(carpeta_capitulo)
+        ])
+
+    print("\n" + "=" * 60)
+    print(f"🌸 RUSH → INICIANDO NANI_{operacion}")
+    print(f"📁 Capítulo: {carpeta_capitulo}")
+    if operacion == "OCR":
+        print(f"🌐 Idioma: {idioma}")
+    print("=" * 60)
+
+    # ------------------------------------------------------
+    # 4. EJECUTAR KAGGLE
+    # ------------------------------------------------------
+    proceso = subprocess.run(
+        comando,
+        cwd=str(carpeta_launcher),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=entorno
+    )
+
+    if proceso.stdout:
+        print(proceso.stdout)
+
+    if proceso.stderr:
+        print(proceso.stderr)
+
+    if proceso.returncode != 0:
+        detalle = (
+            proceso.stderr
+            or proceso.stdout
+            or "Sin detalles adicionales."
+        )[-6000:]
+
+        raise RuntimeError(
+            f"Kaggle RUSH {operacion} terminó con código "
+            f"{proceso.returncode}:\n{detalle}"
+        )
+
+    # ------------------------------------------------------
+    # 5. LOCALIZAR Y VALIDAR RESULTADOS
+    # ------------------------------------------------------
+    carpeta_output = carpeta_launcher / "output"
+
+    if operacion == "CLEAN":
+        carpeta_resultados = carpeta_output / capitulo
+
+        if not carpeta_resultados.is_dir():
+            raise FileNotFoundError(
+                "Kaggle terminó correctamente, pero no encontré "
+                f"la carpeta de resultados: {carpeta_resultados}"
+            )
+
+        resultados = sorted(
+            archivo
+            for archivo in carpeta_resultados.iterdir()
+            if archivo.is_file()
+            and archivo.suffix.lower() in {
+                ".jpg", ".jpeg", ".png", ".webp"
+            }
+            and archivo.stem.upper().endswith("_PR")
+            and archivo.stat().st_size > 0
+        )
+
+        if not resultados:
+            raise RuntimeError(
+                "Kaggle terminó, pero no encontré imágenes "
+                f"_PR válidas en {carpeta_resultados}"
+            )
+
+        ruta_resultado = carpeta_resultados
+
+        print(f"🖼️ Imágenes generadas: {len(resultados)}")
+
+    else:
+        ruta_resultado = (
+            carpeta_output / f"{capitulo}_{idioma}.txt"
+        )
+
+        if not ruta_resultado.is_file():
+            raise FileNotFoundError(
+                "Kaggle terminó correctamente, pero no encontré "
+                f"el TXT esperado: {ruta_resultado}"
+            )
+
+        if ruta_resultado.stat().st_size <= 0:
+            raise RuntimeError(
+                f"El TXT generado está vacío: {ruta_resultado}"
+            )
+
+        print(
+            f"📄 TXT generado: {ruta_resultado.name}"
+        )
+        print(
+            f"💾 Tamaño: {ruta_resultado.stat().st_size:,} bytes"
+        )
+
+    print("\n" + "=" * 60)
+    print(f"✅ RUSH → NANI_{operacion} COMPLETADO")
+    print(f"📁 Resultado: {ruta_resultado}")
+    print("=" * 60)
+
+    return str(ruta_resultado)
+
+
+# 💖 Editado por Rami
+def subir_resultados_rush_drive(
+    service,
+    folder_id,
+    carpeta_resultados,
+    imagenes_originales
+):
+    """
+    Sube imágenes CLEAN directamente a la carpeta original de Drive.
+
+    - No crea carpetas adicionales.
+    - No sobrescribe archivos existentes.
+    - Conserva el nombre y la extensión de cada imagen.
+    - Verifica los nombres y tamaños después de subir.
+    """
+    import mimetypes
+
+    carpeta_resultados = Path(carpeta_resultados).resolve()
+
+    # ------------------------------------------------------
+    # 1. VALIDAR CARPETA LOCAL
+    # ------------------------------------------------------
+    if not carpeta_resultados.is_dir():
+        raise NotADirectoryError(
+            f"No existe la carpeta de resultados: {carpeta_resultados}"
+        )
+
+    if not folder_id:
+        raise ValueError("No se recibió el ID de la carpeta Drive.")
+
+    # ------------------------------------------------------
+    # 2. CONSTRUIR NOMBRES ESPERADOS
+    # ------------------------------------------------------
+    esperados = {}
+
+    for original in imagenes_originales:
+        nombre_original = original["name"]
+        ruta_original = Path(nombre_original)
+
+        nombre_resultado = (
+            f"{ruta_original.stem}_PR{ruta_original.suffix}"
+        )
+
+        clave = nombre_resultado.casefold()
+
+        if clave in esperados:
+            raise RuntimeError(
+                f"Nombre de resultado duplicado: {nombre_resultado}"
+            )
+
+        esperados[clave] = nombre_resultado
+
+    if not esperados:
+        raise RuntimeError(
+            "No se recibieron imágenes originales para verificar."
+        )
+
+    # ------------------------------------------------------
+    # 3. VALIDAR RESULTADOS LOCALES
+    # ------------------------------------------------------
+    resultados_locales = [
+        archivo
+        for archivo in carpeta_resultados.iterdir()
+        if archivo.is_file()
+        and archivo.suffix.lower() in {
+            ".jpg", ".jpeg", ".png", ".webp"
+        }
+    ]
+
+    encontrados = {}
+
+    for archivo in resultados_locales:
+        clave = archivo.name.casefold()
+
+        if clave not in esperados:
+            raise RuntimeError(
+                f"Resultado inesperado: {archivo.name}"
+            )
+
+        if clave in encontrados:
+            raise RuntimeError(
+                f"Resultado local duplicado: {archivo.name}"
+            )
+
+        if archivo.stat().st_size <= 0:
+            raise RuntimeError(
+                f"Imagen vacía: {archivo.name}"
+            )
+
+        encontrados[clave] = archivo
+
+    faltantes = set(esperados) - set(encontrados)
+
+    if faltantes:
+        nombres = [
+            esperados[nombre]
+            for nombre in sorted(faltantes)
+        ]
+        raise RuntimeError(
+            "Faltan imágenes procesadas: "
+            + ", ".join(nombres[:30])
+        )
+
+    # ------------------------------------------------------
+    # 4. COMPROBAR QUE DRIVE NO TENGA LOS _PR
+    # ------------------------------------------------------
+    archivos_drive = []
+    page_token = None
+
+    while True:
+        respuesta = service.files().list(
+            q=(
+                f"'{folder_id}' in parents "
+                "and trashed = false"
+            ),
+            pageSize=1000,
+            pageToken=page_token,
+            fields="nextPageToken,files(id,name,size,mimeType)"
+        ).execute()
+
+        archivos_drive.extend(respuesta.get("files", []))
+        page_token = respuesta.get("nextPageToken")
+
+        if not page_token:
+            break
+
+    existentes = {}
+
+    for archivo in archivos_drive:
+        clave = archivo["name"].casefold()
+        if clave in esperados:
+            existentes.setdefault(clave, []).append(archivo["name"])
+
+    if existentes:
+        nombres = [
+            nombre
+            for lista in existentes.values()
+            for nombre in lista
+        ]
+        raise FileExistsError(
+            "Ya existen resultados _PR en la carpeta de Drive: "
+            + ", ".join(nombres[:30])
+        )
+
+    # ------------------------------------------------------
+    # 5. SUBIR IMÁGENES
+    # ------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("☁️ RUSH → SUBIENDO RESULTADOS A GOOGLE DRIVE")
+    print(f"📁 Carpeta ID: {folder_id}")
+    print(f"🖼️ Imágenes: {len(encontrados)}")
+    print("=" * 60)
+
+    subidos = []
+
+    for clave, archivo in sorted(encontrados.items()):
+        mimetype = mimetypes.guess_type(archivo.name)[0]
+
+        if not mimetype:
+            raise RuntimeError(
+                f"No pude determinar el tipo de imagen: {archivo.name}"
+            )
+
+        metadata = {
+            "name": archivo.name,
+            "parents": [folder_id]
+        }
+
+        media = MediaFileUpload(
+            str(archivo),
+            mimetype=mimetype,
+            resumable=True
+        )
+
+        resultado = service.files().create(
+            body=metadata,
+            media_body=media,
+            fields="id,name,size"
+        ).execute()
+
+        subidos.append({
+            "id": resultado.get("id"),
+            "name": resultado.get("name"),
+            "size": int(resultado.get("size", 0))
+        })
+
+        print(
+            f"✅ RUSH → Subida: {archivo.name} "
+            f"({archivo.stat().st_size:,} bytes)"
+        )
+
+    # ------------------------------------------------------
+    # 6. VERIFICAR ARCHIVOS EN DRIVE
+    # ------------------------------------------------------
+    verificados = {}
+    page_token = None
+
+    while True:
+        respuesta = service.files().list(
+            q=(
+                f"'{folder_id}' in parents "
+                "and trashed = false"
+            ),
+            pageSize=1000,
+            pageToken=page_token,
+            fields="nextPageToken,files(id,name,size)"
+        ).execute()
+
+        for archivo in respuesta.get("files", []):
+            clave = archivo["name"].casefold()
+
+            if clave in esperados:
+                verificados.setdefault(clave, []).append(archivo)
+
+        page_token = respuesta.get("nextPageToken")
+
+        if not page_token:
+            break
+
+    errores = []
+
+    for clave, archivo_local in encontrados.items():
+        coincidencias = verificados.get(clave, [])
+
+        if len(coincidencias) != 1:
+            errores.append(
+                f"{archivo_local.name}: "
+                f"se encontraron {len(coincidencias)} archivos en Drive"
+            )
+            continue
+
+        archivo_drive = coincidencias[0]
+        tamano_local = archivo_local.stat().st_size
+        tamano_drive = int(archivo_drive.get("size", 0))
+
+        if tamano_local != tamano_drive:
+            errores.append(
+                f"{archivo_local.name}: "
+                f"tamaño local {tamano_local}, Drive {tamano_drive}"
+            )
+
+    if errores:
+        raise RuntimeError(
+            "La verificación de Drive no fue satisfactoria:\n"
+            + "\n".join(errores[:30])
+        )
+
+    print("\n" + "=" * 60)
+    print("✅ RUSH → SUBIDA Y VERIFICACIÓN COMPLETADAS")
+    print(f"🖼️ Archivos verificados: {len(encontrados)}")
+    print(f"📁 Carpeta ID: {folder_id}")
+    print("=" * 60)
+
+    return {
+        "ok": True,
+        "folder_id": folder_id,
+        "total_archivos": len(encontrados),
+        "archivos": [
+            archivo.name
+            for archivo in encontrados.values()
+        ]
+    }
+
+
+# 💖 Editado por Rami
+def limpiar_output_rush(operacion, capitulo, idioma=None):
+    """
+    Elimina únicamente el resultado local de la ejecución RUSH
+    después de confirmar su entrega.
+    """
+    import shutil
+
+    operacion = str(operacion).strip().upper()
+    capitulo = str(capitulo).strip()
+
+    if not capitulo:
+        raise ValueError("El capítulo no puede estar vacío.")
+
+    # ------------------------------------------------------
+    # 1. DETERMINAR RESULTADO
+    # ------------------------------------------------------
+    if operacion == "CLEAN":
+        carpeta_output = (RUSH_CLEAN_DIR / "output").resolve()
+#        objetivo = (carpeta_output / capitulo).resolve()
+        objetivo = carpeta_output / capitulo
+
+    elif operacion == "OCR":
+        idioma = str(idioma or "").strip().upper()
+
+        if idioma not in {"ING", "INDO", "CHIN", "KR", "RU"}:
+            raise ValueError(f"Idioma RUSH no válido: {idioma}")
+
+        carpeta_output = (RUSH_OCR_DIR / "output").resolve()
+#        objetivo = (carpeta_output / f"{capitulo}_{idioma}.txt").resolve()
+        objetivo = carpeta_output / f"{capitulo}_{idioma}.txt"
+
+    else:
+        raise ValueError(f"Operación RUSH no válida: {operacion}")
+
+    # ------------------------------------------------------
+    # 2. PROTEGER LA RUTA DE OUTPUT
+    # ------------------------------------------------------
+    if objetivo.parent != carpeta_output:
+        raise RuntimeError(
+            f"Ruta de limpieza no válida: {objetivo}"
+        )
+
+    if objetivo.is_symlink():
+        raise RuntimeError(
+            f"No se eliminará un enlace simbólico: {objetivo}"
+        )
+    objetivo = objetivo.resolve()
+    if not objetivo.exists():
+        print(
+            f"⚠️ RUSH → No hay resultado para limpiar: {objetivo}"
+        )
+        return {
+            "ok": True,
+            "eliminado": False,
+            "ruta": str(objetivo)
+        }
+
+    # ------------------------------------------------------
+    # 3. ELIMINAR ÚNICAMENTE EL RESULTADO INDICADO
+    # ------------------------------------------------------
+    if operacion == "CLEAN":
+        if not objetivo.is_dir():
+            raise NotADirectoryError(
+                f"El resultado CLEAN no es una carpeta: {objetivo}"
+            )
+
+        shutil.rmtree(objetivo)
+
+    else:
+        if not objetivo.is_file():
+            raise RuntimeError(
+                f"El resultado OCR no es un archivo: {objetivo}"
+            )
+
+        objetivo.unlink()
+
+    print(
+        f"🧹 RUSH → Resultado eliminado: {objetivo}"
+    )
+
+    return {
+        "ok": True,
+        "eliminado": True,
+        "ruta": str(objetivo)
+    }
+
+
+
 # Eventos de Discord
 @bot.event
 async def on_ready():
