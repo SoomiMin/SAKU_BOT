@@ -8733,7 +8733,7 @@ async def borrar(ctx):
         finally:
             ASSIST_PROCESS_LOCK.release()
 
-    elif ctx.channel.id == SAKU_RUSH_CHANNEL_ID:
+    #elif ctx.channel.id == SAKU_RUSH_CHANNEL_ID:
         # 🔹 LIMPIEZA RUSH
         # Usar RUSH_PROCESS_LOCK.
         # Limpiar exclusivamente las rutas RUSH.
