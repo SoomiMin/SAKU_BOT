@@ -8531,11 +8531,153 @@ async def assist(
     finally:
         ASSIST_PROCESS_LOCK.release()
 # Comando !Rush
+
+# 💖 Editado por Rami
 @bot.command(name="rush")
 @rol_permitido("acmin")
 async def rush(ctx, *argumentos):
-    pass
-#esperando implementacion :3
+
+    # 1. RESTRICCIÓN DE CANAL
+    if ctx.channel.id != SAKU_RUSH_CHANNEL_ID:
+        return
+
+    # 2. VALIDAR ARGUMENTOS
+    if len(argumentos) == 1:
+        operacion = "CLEAN"
+        idioma = None
+        enlace = argumentos[0]
+
+    elif len(argumentos) == 2:
+        operacion = "OCR"
+        idioma = argumentos[0].strip().upper()
+        enlace = argumentos[1]
+
+        idiomas_validos = {
+            "ING", "INDO", "CHIN", "KR", "RU"
+        }
+
+        if idioma not in idiomas_validos:
+            return await ctx.send(
+                "❌ **Idioma no válido.**\n"
+                "Idiomas disponibles: `ING`, `INDO`, "
+                "`CHIN`, `KR`, `RU`."
+            )
+
+    else:
+        return await ctx.send(
+            "❌ **Formato de solicitud incorrecto.**\n\n"
+            "**CLEAN:**\n"
+            "`!rush <enlace>`\n\n"
+            "**OCR:**\n"
+            "`!rush <idioma> <enlace>`"
+        )
+
+    # 3. EXTRAER ID DE GOOGLE DRIVE
+    enlace = enlace.strip().strip("<>")
+
+    folder_id = extract_id(enlace)
+
+    if not folder_id:
+        return await ctx.send(
+            "❌ **Enlace de Google Drive no válido.**\n"
+            "Debes proporcionar el enlace directo a una carpeta."
+        )
+
+    # 4. CREAR MENSAJE DE ESTADO
+    mensaje_estado = await ctx.send(
+        "🔍 *Validando solicitud RUSH...*"
+    )
+
+    # 5. AUTENTICAR GOOGLE DRIVE
+    await mensaje_estado.edit(
+        content="🔐 *Conectando con Google Drive...*"
+    )
+
+    try:
+        creds = await asyncio.to_thread(
+            authenticate_assist
+        )
+
+        service = await asyncio.to_thread(
+            build,
+            "drive",
+            "v3",
+            credentials=creds
+        )
+
+    except Exception as e:
+        print(
+            f"❌ RUSH → Error autenticando Google Drive: {e}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "❌ **No fue posible conectar con Google Drive.**\n"
+                f"```{str(e)[:1000]}```"
+            )
+        )
+
+    # 6. VALIDAR CARPETA DE DRIVE
+    await mensaje_estado.edit(
+        content="☁️ *Comprobando carpeta de Google Drive...*"
+    )
+
+    try:
+        resultado_drive = await asyncio.to_thread(
+            validar_carpeta_rush,
+            service,
+            folder_id
+        )
+
+    except Exception as e:
+        print(
+            f"❌ RUSH → Error validando carpeta: {e}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "❌ **Ocurrió un error al validar la carpeta.**\n"
+                f"```{str(e)[:1000]}```"
+            )
+        )
+
+    if not resultado_drive["ok"]:
+        print(
+            f"⛔ RUSH → Solicitud rechazada: "
+            f"{resultado_drive['motivo']}"
+        )
+
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **Carpeta no válida.**\n"
+                f"```{resultado_drive['motivo'][:1200]}```"
+            )
+        )
+
+    # 7. VALIDACIONES COMPLETADAS
+    chapter = resultado_drive["chapter"]
+
+    print(
+        f"✨ RUSH → VALIDACIONES COMPLETADAS\n"
+        f"   Usuario: {ctx.author.id}\n"
+        f"   Operación: {operacion}\n"
+        f"   Idioma: {idioma or 'N/A'}\n"
+        f"   Carpeta: {resultado_drive['folder_name']}\n"
+        f"   ID Drive: {folder_id}\n"
+        f"   Capítulo: {chapter}\n"
+        f"   Imágenes: {resultado_drive['total_archivos']}"
+    )
+
+    await mensaje_estado.edit(
+        content=(
+            "✅ **Validaciones completadas.**\n"
+            f"**Operación:** `{operacion}`\n"
+            f"**Capítulo:** `{chapter}`\n"
+            f"**Imágenes:** `{resultado_drive['total_archivos']}`\n"
+            "⏳ *Preparando siguiente etapa...*"
+        )
+    )
+
     
 # Comando !Borrar
 @bot.command(name="borrar")
