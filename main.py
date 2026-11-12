@@ -4806,12 +4806,12 @@ def ejecutar_kaggle_rush(
     # 2. PREPARAR ARCHIVO DE ESTADO
     # ------------------------------------------------------
     entorno = os.environ.copy()
-
+    entorno.pop("NANI_RUSH_CLEAN_STATUS_FILE", None)
+    entorno.pop("NANI_RUSH_OCR_STATUS_FILE", None)
     if archivo_estado:
         entorno[variable_estado] = str(
             Path(archivo_estado).resolve()
         )
-
     # ------------------------------------------------------
     # 3. CONSTRUIR COMANDO
     # ------------------------------------------------------
@@ -9249,11 +9249,12 @@ async def assist(
 
     finally:
         ASSIST_PROCESS_LOCK.release()
+
+
 # Comando !Rush
 @bot.command(name="rush")
 @rol_permitido("acmin")
 async def rush(ctx, *argumentos):
-
     # 1. RESTRICCIÓN DE CANAL
     if ctx.channel.id != SAKU_RUSH_CHANNEL_ID:
         return
@@ -9279,7 +9280,6 @@ async def rush(ctx, *argumentos):
                 "Idiomas disponibles: `ING`, `INDO`, "
                 "`CHIN`, `KR`, `RU`."
             )
-
     else:
         return await ctx.send(
             "❌ **Formato de solicitud incorrecto.**\n\n"
@@ -9291,7 +9291,6 @@ async def rush(ctx, *argumentos):
 
     # 3. EXTRAER ID DE GOOGLE DRIVE
     enlace = enlace.strip().strip("<>")
-
     folder_id = extract_id(enlace)
 
     if not folder_id:
@@ -9371,7 +9370,6 @@ async def rush(ctx, *argumentos):
             )
         )
 
-
     # 7. VALIDACIONES COMPLETADAS
     chapter = resultado_drive["chapter"]
 
@@ -9384,16 +9382,6 @@ async def rush(ctx, *argumentos):
         f"   ID Drive: {folder_id}\n"
         f"   Capítulo: {chapter}\n"
         f"   Imágenes: {resultado_drive['total_archivos']}"
-    )
-
-    await mensaje_estado.edit(
-        content=(
-            "✅ **Validaciones completadas.**\n"
-            f"**Operación:** `{operacion}`\n"
-            f"**Capítulo:** `{chapter}`\n"
-            f"**Imágenes:** `{resultado_drive['total_archivos']}`\n"
-            "⏳ *Preparando descarga...*"
-        )
     )
 
     # 8. COMPROBAR BLOQUEO RUSH
@@ -9428,10 +9416,17 @@ async def rush(ctx, *argumentos):
             )
         )
 
-    # 11. ADQUIRIR BLOQUEO Y DESCARGAR
+    # 11. ADQUIRIR BLOQUEO RUSH
     await RUSH_PROCESS_LOCK.acquire()
 
+    archivo_estado = None
+    monitor_estado = None
+    inicio_proceso = time.perf_counter()
+
     try:
+        # --------------------------------------------------
+        # 12. DESCARGAR IMÁGENES
+        # --------------------------------------------------
         await mensaje_estado.edit(
             content=(
                 "📥 **Descargando imágenes desde Drive...**\n"
@@ -9474,33 +9469,272 @@ async def rush(ctx, *argumentos):
             f"   Destino: {destino}"
         )
 
+        # --------------------------------------------------
+        # 13. PREPARAR MONITOR DE KAGGLE
+        # --------------------------------------------------
+        archivo_estado = (
+            Path("/tmp")
+            / f"saku_rush_{operacion.lower()}_status_{ctx.message.id}.txt"
+        )
+
+        archivo_estado.unlink(missing_ok=True)
+
+        if operacion == "CLEAN":
+            prefijo_estado = (
+                "✅ *¡Descarga completada!*\n"
+                "🧹 ***Iniciando procesamiento CLEAN...***\n"
+            )
+            descripcion_running = "*Limpiando imágenes...*"
+
+        else:
+            prefijo_estado = (
+                "✅ *¡Descarga completada!*\n"
+                f"🌐 ***Iniciando reconocimiento OCR ({idioma})...***\n"
+            )
+            descripcion_running = "*Reconociendo texto...*"
+
+        sufijo_estado = (
+            "__### -+-+- 🔒 S I S T E M A  B L O Q U E A D O 🔒 +-+-__"
+        )
+
         await mensaje_estado.edit(
             content=(
-                "✅ **Descarga completada.**\n"
-                f"**Operación:** `{operacion}`\n"
-                f"**Capítulo:** `{chapter}`\n"
-                f"**Imágenes:** `{resultado_descarga['total_archivos']}`\n"
-                f"**Tamaño:** `{resultado_descarga['total_mb']} MB`\n"
-                f"**Tiempo:** `{resultado_descarga['duracion_segundos']} s`\n"
-                "⏳ *Preparando procesamiento...*"
+                f"{prefijo_estado}"
+                "◉ **Estado:** *Preparando servidor...*\n"
+                f"{sufijo_estado}"
             )
         )
+
+        # --------------------------------------------------
+        # 14. INICIAR MONITOR Y EJECUTAR KAGGLE
+        # --------------------------------------------------
+        monitor_estado = asyncio.create_task(
+            monitorear_estado_kaggle(
+                mensaje_estado,
+                archivo_estado,
+                prefijo_estado,
+                sufijo_estado,
+                descripcion_running=descripcion_running,
+                etiqueta_log=f"RUSH_{operacion}"
+            )
+        )
+
+        try:
+            ruta_resultado = await asyncio.to_thread(
+                ejecutar_kaggle_rush,
+                operacion,
+                destino,
+                archivo_estado,
+                idioma
+            )
+
+        except Exception as e:
+            print(
+                f"❌ RUSH → ERROR EN PROCESAMIENTO:\n"
+                f"{traceback.format_exc()}"
+            )
+
+            return await mensaje_estado.edit(
+                content=(
+                    "⚠️ **Las imágenes se descargaron, "
+                    "pero el procesamiento no pudo completarse.**\n"
+                    "Los archivos de trabajo se conservarán "
+                    "para su revisión.\n"
+                    f"```{str(e)[:1200]}```"
+                )
+            )
+
+        finally:
+            # Detener el monitor antes de cambiar el mensaje.
+            if monitor_estado is not None:
+                monitor_estado.cancel()
+
+                await asyncio.gather(
+                    monitor_estado,
+                    return_exceptions=True
+                )
+
+                monitor_estado = None
+
+        # --------------------------------------------------
+        # 15. ENTREGA DE RESULTADOS CLEAN
+        # --------------------------------------------------
+        if operacion == "CLEAN":
+
+            await mensaje_estado.edit(
+                content=(
+                    "✅ *¡Procesamiento CLEAN completado!*\n"
+                    "☁️ ***Subiendo imágenes procesadas a Drive...***\n"
+                    f"**Capítulo:** `{chapter}`"
+                )
+            )
+
+            try:
+                resultado_subida = await asyncio.to_thread(
+                    subir_resultados_rush_drive,
+                    service,
+                    folder_id,
+                    ruta_resultado,
+                    resultado_drive["imagenes"]
+                )
+
+            except Exception as e:
+                print(
+                    f"❌ RUSH → ERROR SUBIENDO CLEAN:\n"
+                    f"{traceback.format_exc()}"
+                )
+
+                return await mensaje_estado.edit(
+                    content=(
+                        "⚠️ **El procesamiento CLEAN terminó, "
+                        "pero no se pudo confirmar la entrega en Drive.**\n"
+                        "Los resultados locales se conservarán "
+                        "para revisión.\n"
+                        f"```{str(e)[:1200]}```"
+                    )
+                )
+
+            # 15.1 LIMPIAR RESULTADO LOCAL TRAS VERIFICAR DRIVE
+            try:
+                await asyncio.to_thread(
+                    limpiar_output_rush,
+                    "CLEAN",
+                    chapter
+                )
+
+            except Exception:
+                print(
+                    "⚠️ RUSH → Error limpiando CLEAN/output:\n"
+                    f"{traceback.format_exc()}"
+                )
+
+            # 15.2 NOTIFICAR COMPLETADO
+            duracion_minutos = (
+                time.perf_counter() - inicio_proceso
+            ) / 60
+
+            enlace_drive = (
+                "https://drive.google.com/drive/folders/"
+                f"{resultado_subida['folder_id']}"
+            )
+
+            print(
+                f"🌸 RUSH → CLEAN COMPLETADO\n"
+                f"   Capítulo: {chapter}\n"
+                f"   Archivos: {resultado_subida['total_archivos']}\n"
+                f"   ID Drive: {resultado_subida['folder_id']}\n"
+                f"   Tiempo total: {duracion_minutos:.2f} minutos"
+            )
+
+            await mensaje_estado.edit(
+                content=(
+                    f"<@{ctx.author.id}> ⤵︎\n"
+                    "## *¡PROCESO CLEAN COMPLETADO!*\n"
+                    f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
+                    f"**[CAPÍTULO PROCESADO - {chapter}]"
+                    f"({enlace_drive})**\n"
+                    f"🖼️ Imágenes verificadas: "
+                    f"`{resultado_subida['total_archivos']}`\n"
+                    "Los resultados se subieron directamente "
+                    "a la carpeta original de Drive.\n"
+                    "__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
+                )
+            )
+
+        # --------------------------------------------------
+        # 16. ENTREGA DE RESULTADOS OCR
+        # --------------------------------------------------
+        else:
+            await mensaje_estado.edit(
+                content=(
+                    "✅ *¡Procesamiento OCR completado!*\n"
+                    "📄 ***Preparando archivo de reconocimiento...***"
+                )
+            )
+
+            duracion_minutos = (
+                time.perf_counter() - inicio_proceso
+            ) / 60
+
+            # 16.1 ENVIAR TXT A DISCORD
+            await ctx.send(
+                content=(
+                    f"<@{ctx.author.id}> ⤵︎\n"
+                    "## *¡PROCESO OCR COMPLETADO!*\n"
+                    f"🌐 Idioma: `{idioma}`\n"
+                    f"⏱️ Realizado en **{duracion_minutos:.2f} minutos**\n"
+                    "```El reconocimiento no es perfecto. "
+                    "Este archivo es un apoyo adicional y puede "
+                    "contener errores; proceda con cuidado.```\n"
+                    "__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
+                ),
+                file=discord.File(
+                    ruta_resultado,
+                    filename=Path(ruta_resultado).name
+                )
+            )
+
+            # 16.2 LIMPIAR TXT SOLO DESPUÉS DEL ENVÍO
+            try:
+                await asyncio.to_thread(
+                    limpiar_output_rush,
+                    "OCR",
+                    chapter,
+                    idioma
+                )
+
+            except Exception:
+                print(
+                    "⚠️ RUSH → Error limpiando OCR/output:\n"
+                    f"{traceback.format_exc()}"
+                )
+
+            print(
+                f"🌸 RUSH → OCR COMPLETADO\n"
+                f"   Capítulo: {chapter}\n"
+                f"   Idioma: {idioma}\n"
+                f"   Tiempo total: {duracion_minutos:.2f} minutos"
+            )
 
     except Exception as e:
         print(
-            f"❌ RUSH → Error inesperado durante la descarga: {e}"
+            f"❌ RUSH → ERROR INESPERADO:\n"
+            f"{traceback.format_exc()}"
         )
 
-        await mensaje_estado.edit(
-            content=(
-                "❌ **Ocurrió un error durante la descarga.**\n"
-                f"```{str(e)[:1000]}```"
+        try:
+            await mensaje_estado.edit(
+                content=(
+                    "❌ **Ocurrió un error inesperado durante RUSH.**\n"
+                    "Los resultados generados se conservarán "
+                    "si todavía no se confirmó su entrega.\n"
+                    f"```{str(e)[:1200]}```"
+                )
             )
-        )
+        except discord.HTTPException:
+            pass
 
     finally:
-        RUSH_PROCESS_LOCK.release()
+        # --------------------------------------------------
+        # 17. LIBERAR RECURSOS
+        # --------------------------------------------------
 
+        # Detener el monitor si todavía existe.
+        if monitor_estado is not None:
+            monitor_estado.cancel()
+
+            await asyncio.gather(
+                monitor_estado,
+                return_exceptions=True
+            )
+
+        # Eliminar archivo temporal de estado.
+        if archivo_estado is not None:
+            archivo_estado.unlink(missing_ok=True)
+
+        # Liberar bloqueo al terminar TODA la operación.
+        if RUSH_PROCESS_LOCK.locked():
+            RUSH_PROCESS_LOCK.release()
 
     
 # Comando !Borrar
