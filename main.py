@@ -4424,187 +4424,151 @@ async def monitorear_estado_kaggle(
 
         await asyncio.sleep(1)
 # Funciones de Saku_Rush
-def autenticar_y_validar_acceso_rush(
-    folder_id,
-    correo_esperado="soulferre1995@gmail.com"
-):
-    """
-    Autentica Google Drive y comprueba que la cuenta esperada
-    tenga capacidad efectiva para agregar archivos a la carpeta.
-
-    Devuelve también el servicio autenticado para reutilizarlo
-    durante la validación, descarga y subida.
-    """
-
-    resultado = {
-        "ok": False,
-        "motivo": None,
-        "service": None,
-        "correo": None,
-        "carpeta_nombre": None
-    }
-
-    try:
-        # 1. AUTENTICAR OAUTH
-        creds = authenticate_assist()
-
-        service = build(
-            "drive",
-            "v3",
-            credentials=creds,
-            cache_discovery=False
-        )
-
-        # 2. COMPROBAR LA CUENTA AUTENTICADA
-        usuario = service.about().get(
-            fields="user(emailAddress)"
-        ).execute()
-
-        correo_actual = str(
-            usuario.get("user", {}).get("emailAddress", "")
-        ).strip().lower()
-
-        correo_esperado = correo_esperado.strip().lower()
-
-        resultado["correo"] = correo_actual
-
-        if correo_actual != correo_esperado:
-            resultado["motivo"] = (
-                "La cuenta autenticada de Google Drive no es "
-                f"la esperada.\n"
-                f"Cuenta actual: {correo_actual or 'Desconocida'}\n"
-                f"Cuenta requerida: {correo_esperado}"
-            )
-            return resultado
-
-        # 3. CONSULTAR CARPETA Y CAPACIDAD DE ESCRITURA
-        carpeta = service.files().get(
-            fileId=folder_id,
-            fields="id,name,mimeType,capabilities(canAddChildren)",
-            supportsAllDrives=True
-        ).execute()
-
-        if carpeta.get("mimeType") != "application/vnd.google-apps.folder":
-            resultado["motivo"] = (
-                "El enlace proporcionado no corresponde "
-                "a una carpeta de Google Drive."
-            )
-            return resultado
-
-        resultado["carpeta_nombre"] = carpeta.get("name")
-
-        puede_agregar = (
-            carpeta.get("capabilities", {}).get("canAddChildren")
-        )
-
-        if puede_agregar is not True:
-            resultado["motivo"] = (
-                f"La cuenta {correo_actual} puede acceder a la carpeta "
-                f"'{carpeta.get('name')}', pero no tiene permiso "
-                "para agregar archivos."
-            )
-            return resultado
-
-        # 4. ACCESO CORRECTO
-        resultado.update({
-            "ok": True,
-            "service": service
-        })
-
-        print(
-            "✅ RUSH → ACCESO A DRIVE VALIDADO\n"
-            f"   Cuenta: {correo_actual}\n"
-            f"   Carpeta: {carpeta.get('name')}\n"
-            "   Puede agregar archivos: SÍ"
-        )
-
-        return resultado
-
-    except Exception as e:
-        resultado["motivo"] = (
-            f"No fue posible autenticar o comprobar el acceso "
-            f"a Google Drive: {e}"
-        )
-        return resultado
-
+RUSH_BASE_DIR = (
+    Path(__file__).resolve().parent
+    / "NANI_ASSIST"
+    / "RUSH"
+)
+RUSH_CLEAN_DIR = RUSH_BASE_DIR / "CLEAN"
+RUSH_OCR_DIR = RUSH_BASE_DIR / "OCR"
+RUSH_WORKING_DIR = RUSH_BASE_DIR / "working"
+RUSH_CLEAN_WORKING_DIR = (
+    RUSH_WORKING_DIR / "CLEAN"
+)
+RUSH_OCR_WORKING_DIR = (
+    RUSH_WORKING_DIR / "OCR"
+)
 
 # 💖 Editado por Rami
-def validar_carpeta_rush_drive(service, folder_id):
+def validar_carpeta_rush(service, folder_id):
     """
-    Comprueba que la carpeta de Drive:
-    - No contenga subcarpetas.
-    - Contenga únicamente imágenes compatibles.
-    - Tenga al menos una imagen.
-    - No contenga archivos que terminen en _PR.
+    Valida una carpeta de Drive para los procesos RUSH.
     """
-    extensiones_validas = {
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".webp"
+
+    extensiones = {
+        ".jpg", ".jpeg", ".png", ".webp"
     }
-    MIME_CARPETA = "application/vnd.google-apps.folder"
 
-    elementos = listar_elementos_drive(service, folder_id)
+    # 1. OBTENER INFORMACIÓN DE LA CARPETA
+    try:
+        carpeta = service.files().get(
+            fileId=folder_id,
+            fields="id,name,mimeType"
+        ).execute()
 
-    imagenes = []
-    archivos_pr = []
-    errores = []
-
-    for item in elementos:
-        nombre = item["name"]
-        mime = item["mimeType"]
-
-        if mime == MIME_CARPETA:
-            errores.append(
-                f"Subcarpeta no permitida: {nombre}"
+    except Exception as e:
+        return {
+            "ok": False,
+            "motivo": (
+                "No se pudo acceder a la carpeta de Google Drive.\n"
+                f"{str(e)[:800]}"
             )
-            continue
+        }
 
-        # 💖 Editado por Rami
-        # Detectar archivos procesados anteriormente.
-        if Path(nombre).stem.upper().endswith("_PR"):
-            archivos_pr.append(nombre)
-            continue
+    if carpeta.get("mimeType") != "application/vnd.google-apps.folder":
+        return {
+            "ok": False,
+            "motivo": "El enlace no corresponde a una carpeta de Drive."
+        }
 
-        if mime.startswith("application/vnd.google-apps."):
-            errores.append(
-                f"Archivo nativo de Google no compatible: {nombre}"
-            )
-            continue
+    chapter = carpeta.get("name", "").strip()
 
-        extension = Path(nombre).suffix.lower()
+    if not chapter or chapter in (".", "..") or "/" in chapter or "\\" in chapter:
+        return {
+            "ok": False,
+            "motivo": "El nombre de la carpeta no es válido."
+        }
 
-        if extension not in extensiones_validas:
-            errores.append(
-                f"Archivo no compatible: {nombre}"
-            )
-            continue
-
-        imagenes.append(item)
-
-    # 💖 Editado por Rami
-    # Cancelar si existe al menos un archivo procesado.
-    if archivos_pr:
-        errores.insert(
-            0,
-            "La carpeta ya contiene archivos procesados (_PR): "
-            + ", ".join(archivos_pr)
+    # 2. LISTAR CONTENIDO
+    try:
+        elementos = listar_elementos_drive(
+            service,
+            folder_id
         )
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "motivo": (
+                "No se pudo consultar el contenido de la carpeta.\n"
+                f"{str(e)[:800]}"
+            )
+        }
+
+    # 3. RECHAZAR SUBCARPETAS
+    subcarpetas = [
+        elemento["name"]
+        for elemento in elementos
+        if elemento["mimeType"] == "application/vnd.google-apps.folder"
+    ]
+
+    if subcarpetas:
+        return {
+            "ok": False,
+            "motivo": (
+                "La carpeta contiene subcarpetas. "
+                "RUSH solamente admite imágenes en la raíz.\n"
+                f"{', '.join(subcarpetas[:10])}"
+            )
+        }
+
+    # 4. RECHAZAR ARCHIVOS NATIVOS DE GOOGLE
+    archivos_google = [
+        elemento["name"]
+        for elemento in elementos
+        if elemento["mimeType"].startswith("application/vnd.google-apps.")
+    ]
+
+    if archivos_google:
+        return {
+            "ok": False,
+            "motivo": (
+                "La carpeta contiene archivos nativos de Google.\n"
+                f"{', '.join(archivos_google[:10])}"
+            )
+        }
+
+    # 5. IDENTIFICAR IMÁGENES Y RESULTADOS PREEXISTENTES
+    imagenes = []
+    resultados_pr = []
+
+    for elemento in elementos:
+        nombre = elemento["name"]
+        extension = Path(nombre).suffix.lower()
+        nombre_base = Path(nombre).stem
+
+        if nombre_base.upper().endswith("_PR"):
+            resultados_pr.append(nombre)
+            continue
+
+        if extension in extensiones:
+            imagenes.append(elemento)
+
+    if resultados_pr:
+        return {
+            "ok": False,
+            "motivo": (
+                "La carpeta ya contiene archivos procesados (_PR). "
+                "No se realizará una nueva ejecución.\n"
+                f"{', '.join(resultados_pr[:10])}"
+            )
+        }
 
     if not imagenes:
-        errores.append(
-            "La carpeta no contiene imágenes compatibles."
-        )
+        return {
+            "ok": False,
+            "motivo": "No se encontraron imágenes compatibles en la carpeta."
+        }
 
+    # 6. VALIDACIÓN COMPLETADA
     return {
-        "ok": len(errores) == 0,
+        "ok": True,
+        "folder_id": folder_id,
+        "folder_name": chapter,
+        "chapter": chapter,
         "imagenes": imagenes,
-        "total_imagenes": len(imagenes),
-        "archivos_pr": archivos_pr,
-        "errores": errores
+        "total_archivos": len(imagenes)
     }
-
 
 # Eventos de Discord
 @bot.event
