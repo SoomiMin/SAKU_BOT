@@ -4423,6 +4423,7 @@ async def monitorear_estado_kaggle(
             )
 
         await asyncio.sleep(1)
+        
 # Funciones de Saku_Rush
 RUSH_BASE_DIR = (
     Path(__file__).resolve().parent
@@ -4569,6 +4570,180 @@ def validar_carpeta_rush(service, folder_id):
         "imagenes": imagenes,
         "total_archivos": len(imagenes)
     }
+
+
+# 💖 Editado por Rami
+def descargar_carpeta_rush(service, imagenes, destino):
+    """
+    Descarga únicamente las imágenes previamente validadas
+    de una carpeta RUSH.
+
+    No permite subcarpetas ni sobrescribe archivos existentes.
+    Verifica el tamaño de cada descarga y elimina los
+    archivos parciales si ocurre algún error.
+    """
+    destino = Path(destino)
+
+    inicio = time.perf_counter()
+    total_archivos = 0
+    total_bytes = 0
+    errores = []
+
+    # Evitar sobrescribir trabajos anteriores
+    if destino.exists():
+        return {
+            "ok": False,
+            "destino": str(destino),
+            "total_archivos": 0,
+            "total_bytes": 0,
+            "total_mb": 0,
+            "duracion_segundos": 0,
+            "errores": ["La carpeta de destino ya existe."]
+        }
+
+    try:
+        destino.mkdir(parents=True, exist_ok=False)
+
+        nombres = set()
+
+        for item in imagenes:
+            nombre = item["name"]
+            elemento_id = item["id"]
+
+            # Validar nombre de archivo
+            if (
+                not nombre
+                or nombre in (".", "..")
+                or Path(nombre).name != nombre
+                or "/" in nombre
+                or "\\" in nombre
+            ):
+                errores.append(
+                    f"Nombre de archivo no válido: {nombre}"
+                )
+                continue
+
+            # Evitar nombres duplicados
+            if nombre in nombres:
+                errores.append(
+                    f"Nombre de archivo duplicado: {nombre}"
+                )
+                continue
+
+            nombres.add(nombre)
+
+            ruta_elemento = destino / nombre
+            ruta_temporal = destino / f"{nombre}.rush_part"
+
+            try:
+                request = service.files().get_media(
+                    fileId=elemento_id
+                )
+
+                with open(ruta_temporal, "wb") as archivo:
+                    downloader = MediaIoBaseDownload(
+                        archivo,
+                        request,
+                        chunksize=1024 * 1024
+                    )
+
+                    terminado = False
+
+                    while not terminado:
+                        _, terminado = downloader.next_chunk()
+
+                tamano = ruta_temporal.stat().st_size
+
+                if tamano <= 0:
+                    raise ValueError(
+                        "El archivo descargado está vacío."
+                    )
+
+                # Verificar tamaño contra los metadatos de Drive
+                tamano_drive = item.get("size")
+
+                if tamano_drive is not None:
+                    if tamano != int(tamano_drive):
+                        raise ValueError(
+                            f"Tamaño incorrecto: "
+                            f"{tamano} bytes descargados, "
+                            f"{tamano_drive} bytes esperados."
+                        )
+
+                ruta_temporal.replace(ruta_elemento)
+
+                total_archivos += 1
+                total_bytes += tamano
+
+            except Exception as e:
+                for ruta in (ruta_temporal, ruta_elemento):
+                    try:
+                        if ruta.exists():
+                            ruta.unlink()
+                    except OSError:
+                        pass
+
+                errores.append(f"{nombre}: {e}")
+
+    except Exception as e:
+        errores.append(
+            f"Error preparando la descarga: {e}"
+        )
+
+    duracion = time.perf_counter() - inicio
+
+    # Verificar que se descargaron todas las imágenes
+    if total_archivos != len(imagenes):
+        if not errores:
+            errores.append(
+                "La cantidad de archivos descargados no coincide."
+            )
+
+    resultado = {
+        "ok": (
+            len(errores) == 0
+            and total_archivos == len(imagenes)
+            and total_archivos > 0
+        ),
+        "destino": str(destino),
+        "total_archivos": total_archivos,
+        "total_bytes": total_bytes,
+        "total_mb": round(
+            total_bytes / (1024 * 1024), 2
+        ),
+        "duracion_segundos": round(duracion, 2),
+        "errores": errores
+    }
+
+    # Eliminar la carpeta incompleta si algo falló
+    if not resultado["ok"] and destino.exists():
+        try:
+            for archivo in destino.iterdir():
+                if archivo.is_file():
+                    archivo.unlink()
+
+            destino.rmdir()
+
+        except OSError as e:
+            print(
+                f"⚠️ RUSH → No se pudo limpiar "
+                f"la carpeta incompleta: {e}"
+            )
+
+    print(
+        f"{'✅' if resultado['ok'] else '⚠️'} "
+        f"RUSH → DESCARGA DRIVE\n"
+        f"   Archivos: {total_archivos}/{len(imagenes)}\n"
+        f"   Tamaño: {resultado['total_mb']} MB\n"
+        f"   Tiempo: {resultado['duracion_segundos']} segundos\n"
+        f"   Destino: {destino}"
+    )
+
+    for error in errores:
+        print(f"   ⚠️ {error}")
+
+    return resultado
+
 
 # Eventos de Discord
 @bot.event
@@ -8315,7 +8490,7 @@ async def assist(
                         archivo_estado,
                         prefijo_estado,
                         sufijo_estado,
-                        descripcion_running="Limpiando imágenes...",
+                        descripcion_running="*Limpiando imágenes...*",
                         etiqueta_log="CLEAN"
                     )
                 )
@@ -8461,7 +8636,7 @@ async def assist(
                         archivo_estado,
                         prefijo_estado,
                         sufijo_estado,
-                        descripcion_running="Procesando...",
+                        descripcion_running="*Procesando...*",
                         etiqueta_log="TRAD"
                     )
                 )
@@ -8531,8 +8706,6 @@ async def assist(
     finally:
         ASSIST_PROCESS_LOCK.release()
 # Comando !Rush
-
-# 💖 Editado por Rami
 @bot.command(name="rush")
 @rol_permitido("acmin")
 async def rush(ctx, *argumentos):
@@ -8654,6 +8827,7 @@ async def rush(ctx, *argumentos):
             )
         )
 
+
     # 7. VALIDACIONES COMPLETADAS
     chapter = resultado_drive["chapter"]
 
@@ -8674,9 +8848,115 @@ async def rush(ctx, *argumentos):
             f"**Operación:** `{operacion}`\n"
             f"**Capítulo:** `{chapter}`\n"
             f"**Imágenes:** `{resultado_drive['total_archivos']}`\n"
-            "⏳ *Preparando siguiente etapa...*"
+            "⏳ *Preparando descarga...*"
         )
     )
+
+    # 8. COMPROBAR BLOQUEO RUSH
+    if RUSH_PROCESS_LOCK.locked():
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **RUSH está ocupado.**\n"
+                "Ya existe otro proceso en ejecución. "
+                "Inténtalo nuevamente cuando termine."
+            )
+        )
+
+    # 9. DEFINIR RUTA DE TRABAJO
+    if operacion == "CLEAN":
+        directorio_trabajo = RUSH_CLEAN_WORKING_DIR
+    else:
+        directorio_trabajo = RUSH_OCR_WORKING_DIR
+
+    destino = (
+        directorio_trabajo
+        / folder_id
+        / chapter
+    )
+
+    # 10. COMPROBAR TRABAJO EXISTENTE
+    if destino.exists():
+        return await mensaje_estado.edit(
+            content=(
+                "⛔ **La carpeta de trabajo ya existe.**\n"
+                "No se sobrescribirán archivos de una "
+                "ejecución anterior."
+            )
+        )
+
+    # 11. ADQUIRIR BLOQUEO Y DESCARGAR
+    await RUSH_PROCESS_LOCK.acquire()
+
+    try:
+        await mensaje_estado.edit(
+            content=(
+                "📥 **Descargando imágenes desde Drive...**\n"
+                f"**Operación:** `{operacion}`\n"
+                f"**Capítulo:** `{chapter}`"
+            )
+        )
+
+        resultado_descarga = await asyncio.to_thread(
+            descargar_carpeta_rush,
+            service,
+            resultado_drive["imagenes"],
+            destino
+        )
+
+        if not resultado_descarga["ok"]:
+            detalles = "\n".join(
+                resultado_descarga["errores"][:8]
+            )
+
+            print(
+                f"⛔ RUSH → Error durante la descarga:\n"
+                f"{detalles}"
+            )
+
+            return await mensaje_estado.edit(
+                content=(
+                    "❌ **No se pudo completar la descarga.**\n"
+                    f"```{detalles[:1200]}```"
+                )
+            )
+
+        print(
+            f"✨ RUSH → DESCARGA COMPLETADA\n"
+            f"   Operación: {operacion}\n"
+            f"   Capítulo: {chapter}\n"
+            f"   Imágenes: {resultado_descarga['total_archivos']}\n"
+            f"   Tamaño: {resultado_descarga['total_mb']} MB\n"
+            f"   Tiempo: {resultado_descarga['duracion_segundos']} segundos\n"
+            f"   Destino: {destino}"
+        )
+
+        await mensaje_estado.edit(
+            content=(
+                "✅ **Descarga completada.**\n"
+                f"**Operación:** `{operacion}`\n"
+                f"**Capítulo:** `{chapter}`\n"
+                f"**Imágenes:** `{resultado_descarga['total_archivos']}`\n"
+                f"**Tamaño:** `{resultado_descarga['total_mb']} MB`\n"
+                f"**Tiempo:** `{resultado_descarga['duracion_segundos']} s`\n"
+                "⏳ *Preparando procesamiento...*"
+            )
+        )
+
+    except Exception as e:
+        print(
+            f"❌ RUSH → Error inesperado durante la descarga: {e}"
+        )
+
+        await mensaje_estado.edit(
+            content=(
+                "❌ **Ocurrió un error durante la descarga.**\n"
+                f"```{str(e)[:1000]}```"
+            )
+        )
+
+    finally:
+        RUSH_PROCESS_LOCK.release()
+
 
     
 # Comando !Borrar
