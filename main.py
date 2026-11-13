@@ -5149,59 +5149,90 @@ def subir_resultados_rush_drive(
         )
 
     # ------------------------------------------------------
-    # 6. VERIFICAR ARCHIVOS EN DRIVE
+    # 6. VERIFICAR ARCHIVOS EN DRIVE POR ID
     # ------------------------------------------------------
     verificados = {}
-    page_token = None
-
-    while True:
-        respuesta = service.files().list(
-            q=(
-                f"'{folder_id}' in parents "
-                "and trashed = false"
-            ),
-            pageSize=1000,
-            pageToken=page_token,
-            fields="nextPageToken,files(id,name,size)"
-        ).execute()
-
-        for archivo in respuesta.get("files", []):
-            clave = archivo["name"].casefold()
-
-            if clave in esperados:
-                verificados.setdefault(clave, []).append(archivo)
-
-        page_token = respuesta.get("nextPageToken")
-
-        if not page_token:
-            break
-
     errores = []
 
-    for clave, archivo_local in encontrados.items():
-        coincidencias = verificados.get(clave, [])
+    for subido in subidos:
+        archivo_id = subido.get("id")
+        nombre = subido.get("name")
 
-        if len(coincidencias) != 1:
+        if not archivo_id:
             errores.append(
-                f"{archivo_local.name}: "
-                f"se encontraron {len(coincidencias)} archivos en Drive"
+                f"{nombre}: Drive no devolvió un ID válido"
             )
             continue
 
-        archivo_drive = coincidencias[0]
-        tamano_local = archivo_local.stat().st_size
-        tamano_drive = int(archivo_drive.get("size", 0))
+        try:
+            archivo_drive = service.files().get(
+                fileId=archivo_id,
+                fields="id,name,size,parents,trashed"
+            ).execute()
 
-        if tamano_local != tamano_drive:
+            # 💖 Editado por Rami
+            # Verificar que siga dentro de la carpeta original.
+            if folder_id not in archivo_drive.get("parents", []):
+                errores.append(
+                    f"{nombre}: el archivo no está en la carpeta esperada"
+                )
+                continue
+
+            if archivo_drive.get("trashed", False):
+                errores.append(
+                    f"{nombre}: el archivo aparece en la papelera"
+                )
+                continue
+
+            if archivo_drive.get("name") != nombre:
+                errores.append(
+                    f"{nombre}: nombre devuelto por Drive "
+                    f"no coincide ({archivo_drive.get('name')})"
+                )
+                continue
+
+            # Buscar el archivo local correspondiente.
+            clave = nombre.casefold()
+            archivo_local = encontrados.get(clave)
+
+            if archivo_local is None:
+                errores.append(
+                    f"{nombre}: no se encontró el archivo local"
+                )
+                continue
+
+            tamano_local = archivo_local.stat().st_size
+            tamano_drive = int(archivo_drive.get("size", 0))
+
+            if tamano_local != tamano_drive:
+                errores.append(
+                    f"{nombre}: tamaño local {tamano_local}, "
+                    f"Drive {tamano_drive}"
+                )
+                continue
+
+            verificados[clave] = archivo_drive
+
+            print(
+                f"🔎 RUSH → Verificado: {nombre} "
+                f"({tamano_drive:,} bytes)"
+            )
+
+        except Exception as e:
             errores.append(
-                f"{archivo_local.name}: "
-                f"tamaño local {tamano_local}, Drive {tamano_drive}"
+                f"{nombre}: error consultando el archivo por ID: {e}"
             )
 
     if errores:
         raise RuntimeError(
             "La verificación de Drive no fue satisfactoria:\n"
             + "\n".join(errores[:30])
+        )
+
+    if len(verificados) != len(encontrados):
+        raise RuntimeError(
+            "La cantidad de archivos verificados no coincide "
+            "con la cantidad de resultados locales."
         )
 
     print("\n" + "=" * 60)
