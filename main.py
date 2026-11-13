@@ -9793,68 +9793,140 @@ async def rush(ctx, *argumentos):
         if RUSH_PROCESS_LOCK.locked():
             RUSH_PROCESS_LOCK.release()
 
-    
+
 # Comando !Borrar
 @bot.command(name="borrar")
 @rol_permitido("acmin")
 async def borrar(ctx):
-    if ctx.channel.id == NANI_ASSIST_CHANNEL_ID:
-        # 1. RESTRINGIR AL CANAL DE SAKU-ASISTENTE
-        if ctx.channel.id != NANI_ASSIST_CHANNEL_ID:
-            return
-        # 2. EVITAR BORRAR DURANTE UN PROCESO
-        if ASSIST_PROCESS_LOCK.locked():
-            return await ctx.send(
-                "⛔ **No se puede limpiar mientras hay un proceso activo.**"
-            )
-        # Adquirir el lock sin esperar.
-        adquirido = await ASSIST_PROCESS_LOCK.acquire()
-        if not adquirido:
-            return await ctx.send(
-                "⛔ **Hay otro proceso utilizando Saku-Asistente.**"
-            )
-        try:
-            import shutil
-            base_dir = Path(__file__).resolve().parent
-            carpetas = [
-                base_dir / "NANI_ASSIST" / "working",
-                base_dir / "NANI_ASSIST" / "TRAD" / "output",
-                base_dir / "NANI_ASSIST" / "CLEAN" / "output"
-            ]
-            eliminados = 0
-            for carpeta in carpetas:
-                if not carpeta.is_dir():
-                    continue
-                for elemento in carpeta.iterdir():
-                    if elemento.is_symlink() or elemento.is_file():
-                        elemento.unlink()
-                    elif elemento.is_dir():
-                        shutil.rmtree(elemento)
-                    eliminados += 1
-            await ctx.send(
-                "🧹 **LIMPIEZA COMPLETADA**\n"
-                f"Elementos eliminados: **{eliminados}**\n"
-                "*Se conservaron las carpetas principales.*"
-            )
-        except Exception as e:
-            print(
-                "❌ ASSIST → **ERROR EN !borrar:**\n"
-                f"{traceback.format_exc()}"
-            )
-            await ctx.send(
-                f"⚠️ **No se pudo completar la limpieza:**\n"
-                f"```{str(e)[:1000]}```"
-            )
-        finally:
-            ASSIST_PROCESS_LOCK.release()
 
-    #elif ctx.channel.id == SAKU_RUSH_CHANNEL_ID:
-        # 🔹 LIMPIEZA RUSH
-        # Usar RUSH_PROCESS_LOCK.
-        # Limpiar exclusivamente las rutas RUSH.
+    # ------------------------------------------------------
+    # 1. IDENTIFICAR SISTEMA Y BLOQUEO
+    # ------------------------------------------------------
+    if ctx.channel.id == NANI_ASSIST_CHANNEL_ID:
+
+        sistema = "ASSIST"
+        lock = ASSIST_PROCESS_LOCK
+
+        carpetas = [
+            Path(__file__).resolve().parent
+            / "NANI_ASSIST" / "working",
+
+            Path(__file__).resolve().parent
+            / "NANI_ASSIST" / "TRAD" / "output",
+
+            Path(__file__).resolve().parent
+            / "NANI_ASSIST" / "CLEAN" / "output"
+        ]
+
+        archivos_extra = []
+
+    elif ctx.channel.id == SAKU_RUSH_CHANNEL_ID:
+
+        sistema = "RUSH"
+        lock = RUSH_PROCESS_LOCK
+
+        carpetas = [
+            RUSH_CLEAN_WORKING_DIR,
+            RUSH_OCR_WORKING_DIR,
+
+            RUSH_CLEAN_DIR / "output",
+            RUSH_CLEAN_DIR / "temp",
+
+            RUSH_OCR_DIR / "output",
+            RUSH_OCR_DIR / "temp"
+        ]
+
+        # 💖 Editado por Rami
+        # Estados temporales exclusivos de RUSH.
+        archivos_extra = list(
+            Path("/tmp").glob(
+                "saku_rush_*_status_*.txt"
+            )
+        )
 
     else:
         return
+
+    # ------------------------------------------------------
+    # 2. EVITAR BORRAR DURANTE UN PROCESO
+    # ------------------------------------------------------
+    if lock.locked():
+        return await ctx.send(
+            f"⛔ **No se puede limpiar mientras "
+            f"Saku-{sistema} tiene un proceso activo.**"
+        )
+
+    adquirido = await lock.acquire()
+
+    if not adquirido:
+        return await ctx.send(
+            f"⛔ **Hay otro proceso utilizando Saku-{sistema}.**"
+        )
+
+    try:
+        import shutil
+
+        eliminados = 0
+
+        # --------------------------------------------------
+        # 3. LIMPIAR DIRECTORIOS
+        # --------------------------------------------------
+        for carpeta in carpetas:
+
+            if not carpeta.is_dir():
+                continue
+
+            for elemento in list(carpeta.iterdir()):
+
+                if elemento.is_symlink() or elemento.is_file():
+                    elemento.unlink()
+
+                elif elemento.is_dir():
+                    shutil.rmtree(elemento)
+
+                eliminados += 1
+
+        # --------------------------------------------------
+        # 4. LIMPIAR ARCHIVOS EXTRA
+        # --------------------------------------------------
+        for archivo in archivos_extra:
+
+            if archivo.is_symlink() or archivo.is_file():
+                archivo.unlink()
+                eliminados += 1
+
+        # --------------------------------------------------
+        # 5. CONFIRMAR LIMPIEZA
+        # --------------------------------------------------
+        await ctx.send(
+            f"🧹 **LIMPIEZA {sistema} COMPLETADA**\n"
+            f"Elementos eliminados: **{eliminados}**\n"
+            "*Se conservaron las carpetas principales.*"
+        )
+
+        print(
+            f"🧹 SAKU-{sistema} → "
+            f"Limpieza manual completada. "
+            f"Elementos eliminados: {eliminados}"
+        )
+
+    except Exception as e:
+
+        print(
+            f"❌ SAKU-{sistema} → ERROR EN !borrar:\n"
+            f"{traceback.format_exc()}"
+        )
+
+        await ctx.send(
+            f"⚠️ **No se pudo completar la limpieza "
+            f"de Saku-{sistema}:**\n"
+            f"```{str(e)[:1000]}```"
+        )
+
+    finally:
+        lock.release()
+
+
 
 # Ejecutar bot
 bot.run(TOKEN)
