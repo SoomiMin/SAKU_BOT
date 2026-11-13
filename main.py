@@ -4425,6 +4425,27 @@ async def monitorear_estado_kaggle(
         await asyncio.sleep(1)
         
 # Funciones de Saku_Rush
+# 💖 Editado por Rami
+async def ejecutar_thread_rush_seguro(funcion, *args):
+    """
+    Evita liberar el bloqueo RUSH mientras una operación
+    ejecutada en segundo plano todavía sigue trabajando.
+    """
+    tarea = asyncio.create_task(
+        asyncio.to_thread(funcion, *args)
+    )
+    try:
+        return await asyncio.shield(tarea)
+    except asyncio.CancelledError:
+        try:
+            await asyncio.shield(tarea)
+        except Exception as e:
+            print(
+                f"⚠️ RUSH → Error durante una operación "
+                f"cancelada: {e}"
+            )
+        raise
+
 RUSH_BASE_DIR = (
     Path(__file__).resolve().parent
     / "NANI_ASSIST"
@@ -9435,7 +9456,7 @@ async def rush(ctx, *argumentos):
             )
         )
 
-        resultado_descarga = await asyncio.to_thread(
+        resultado_descarga = await ejecutar_thread_rush_seguro(
             descargar_carpeta_rush,
             service,
             resultado_drive["imagenes"],
@@ -9520,7 +9541,7 @@ async def rush(ctx, *argumentos):
         )
 
         try:
-            ruta_resultado = await asyncio.to_thread(
+            ruta_resultado = await ejecutar_thread_rush_seguro(
                 ejecutar_kaggle_rush,
                 operacion,
                 destino,
@@ -9570,7 +9591,7 @@ async def rush(ctx, *argumentos):
             )
 
             try:
-                resultado_subida = await asyncio.to_thread(
+                resultado_subida = await ejecutar_thread_rush_seguro(
                     subir_resultados_rush_drive,
                     service,
                     folder_id,
@@ -9596,7 +9617,7 @@ async def rush(ctx, *argumentos):
 
             # 15.1 LIMPIAR RESULTADO LOCAL TRAS VERIFICAR DRIVE
             try:
-                await asyncio.to_thread(
+                await ejecutar_thread_rush_seguro(
                     limpiar_output_rush,
                     "CLEAN",
                     chapter
@@ -9637,7 +9658,7 @@ async def rush(ctx, *argumentos):
                     f"`{resultado_subida['total_archivos']}`\n"
                     "Los resultados se subieron directamente "
                     "a la carpeta original de Drive.\n"
-                    "__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
+                    "__### -+-+- 🔓 P R O C E S O  C O M P L E T A D O 🔓 +-+-__"
                 )
             )
 
@@ -9666,7 +9687,7 @@ async def rush(ctx, *argumentos):
                     "```El reconocimiento no es perfecto. "
                     "Este archivo es un apoyo adicional y puede "
                     "contener errores; proceda con cuidado.```\n"
-                    "__### -+-+- 🔓 S I S T E M A  L I B E R A D O 🔓 +-+-__"
+                    "__### -+-+- 🔓 P R O C E S O  C O M P L E T A D O 🔓 +-+-__"
                 ),
                 file=discord.File(
                     ruta_resultado,
@@ -9676,7 +9697,7 @@ async def rush(ctx, *argumentos):
 
             # 16.2 LIMPIAR TXT SOLO DESPUÉS DEL ENVÍO
             try:
-                await asyncio.to_thread(
+                await ejecutar_thread_rush_seguro(
                     limpiar_output_rush,
                     "OCR",
                     chapter,
@@ -9730,8 +9751,13 @@ async def rush(ctx, *argumentos):
 
         # Eliminar archivo temporal de estado.
         if archivo_estado is not None:
-            archivo_estado.unlink(missing_ok=True)
-
+            try:
+                archivo_estado.unlink(missing_ok=True)
+            except OSError as e:
+                print(
+                    f"⚠️ RUSH → No se pudo eliminar "
+                    f"el archivo de estado: {e}"
+                )
         # Liberar bloqueo al terminar TODA la operación.
         if RUSH_PROCESS_LOCK.locked():
             RUSH_PROCESS_LOCK.release()
